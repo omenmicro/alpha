@@ -1,4 +1,4 @@
-= Seznam součástek
+# Seznam součástek
 
 | Part  |   Value     |     Device                   |  Package       |   Library       | Sheet |
 |  :--- |  :---       |  :---                        |  :---          |  :---           |  :--- |
