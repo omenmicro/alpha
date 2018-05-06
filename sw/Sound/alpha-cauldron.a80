@@ -1,0 +1,339 @@
+            .ORG    8000h 
+
+                    ;bitone
+
+            DI      
+BEGIN:              
+            LXI     h,melody 
+
+LOOP:               
+            MOV     a,m 
+            ORA     a 
+            JZ      begin 
+            
+            INX     h 
+            STA     tone1 
+            MOV     b,a 
+            CPI     1 
+            MVI     a,0x80 
+            JNZ     nopause1 
+            MVI     a,0x00 
+            sta tone1
+            mov b,a
+NOPAUSE1:   STA     pause1 
+
+            MOV     a,m 
+            STA     tone2 
+            MOV     c,a 
+			INX     h 
+
+            CPI     1 
+            MVI     a,0x80 
+            JNZ     nopause2
+            MVI     a,0x00 
+            sta tone2
+            mov c,a
+NOPAUSE2:   STA     pause2 
+
+			PUSH    h 
+NOPAUSE:            
+            CALL    play 
+            POP     h 
+            JMP     loop 
+
+DURATION    EQU     1500 
+
+PLAY:               
+            LXI     d,duration 
+            MVI     a,0xC0 
+
+PLAYLOOP:           
+            MVI     a,0x40 
+            DCR     b ; 4T
+            JNZ     play2 ; 7T/10T
+
+            MVI     b,00 ; 4T
+TONE1       EQU     $-1 
+            XRI     0x80 ;4T
+PAUSE1      EQU     $-1 
+
+PLAY2:      DCR     C 
+            JNZ     playgo 
+            MVI     c,00 
+TONE2       EQU     $-1 
+            XRI     0x80 
+PAUSE2      EQU     $-1 
+
+
+PLAYGO:             
+            SIM     
+            MOV     l,a ; 4T
+            DCX     d ; 6T
+            MOV     a,d ;4T
+            ORA     e ; 4T
+            MOV     a,l ;4T
+            JNZ     playloop ; 7T / 10T
+            RET     
+                    ;LOOP  duration ~ 50T
+
+
+                    ;equates
+TP          EQU     1 
+TC2         EQU     234 
+TCIS2       EQU     221 
+TD2         EQU     209 
+TDIS2       EQU     197 
+TE2         EQU     186 
+TF2         EQU     175 
+TFIS2       EQU     166 
+TG2         EQU     156 
+TGIS2       EQU     147 
+TA2         EQU     139 
+TAIS2       EQU     131 
+TB2         EQU     124 
+TC3         EQU     117 
+TCIS3       EQU     110 
+TD3         EQU     104 
+TDIS3       EQU     98 
+TE3         EQU     93 
+TF3         EQU     87 
+TFIS3       EQU     83 
+TG3         EQU     78 
+TGIS3       EQU     73 
+TA3         EQU     69 
+TAIS3       EQU     65 
+TB3         EQU     62 
+TC4         EQU     tc3 / 2
+TCIS4       EQU     tcis3 / 2
+TD4         EQU     td3 / 2
+TDIS4       EQU     tdis3 / 2
+TE4         EQU     te3 / 2
+TF4         EQU     tf3 / 2
+TFIS4       EQU     tfis3 / 2
+TG4         EQU     tg3 / 2
+TGIS4       EQU     tgis3 / 2
+TA4         EQU     ta3 / 2
+TAIS4       EQU     tais3 / 2
+TB4         EQU     tb3 / 2
+TC5         EQU     tc4 / 2
+TCIS5       EQU     tcis4 / 2
+TD5         EQU     td4 / 2
+TDIS5       EQU     tdis4 / 2
+TE5         EQU     te4 / 2
+TF5         EQU     tf4 / 2
+TFIS5       EQU     tfis4 / 2
+TG5         EQU     tg4 / 2
+TGIS5       EQU     tgis4 / 2
+TA5         EQU     ta4 / 2
+TAIS5       EQU     tais4 / 2
+TB5         EQU     tb4 / 2
+
+
+MELODY:             
+	db tfis5,tb2
+	db tfis5,tb2
+	db tfis5,tp
+	db tfis5,tp
+	db tfis5,tfis3
+	db tfis5,tfis3
+	db tfis5,tp
+	db tfis5,tp
+	db tfis5,tb3
+	db tfis5,tb3
+	db tfis5,tp
+	db tfis5,tp
+	db tfis5,td4
+	db tfis5,td4
+	db tfis5,tp
+	db tfis5,tp
+	db tfis5,tb3
+	db tfis5,tb3
+	db tfis5,tp
+	db tfis5,tp
+	db tfis5,tfis3
+	db tfis5,tfis3
+	db tfis5,tp
+	db tfis5,tp
+	db tfis5,td3
+	db tfis5,td3
+	db tfis5,tp
+	db tfis5,tp
+	db tfis5,tfis3
+	db tfis5,tfis3
+	db tfis5,tp
+	db tfis5,tp
+
+
+	db tfis5,tb2
+	db tfis5,tb2
+	db tfis5,tp
+	db tfis5,tp
+	db tfis5,tb3
+	db tfis5,tb3
+	db tfis5,tp
+	db tfis5,tp
+	db tfis5,tcis3
+	db tfis5,tcis3
+	db tfis5,tp
+	db tfis5,tp
+	db tfis5,tcis4
+	db tfis5,tcis4
+	db tfis5,tp
+	db tfis5,tp
+	db tfis5,td3
+	db tfis5,td3
+	db tfis5,tp
+	db tfis5,tp
+	db td5,td4
+	db td5,td4
+	db td5,tp
+	db td5,tp
+	db tfis5,tb2
+	db tfis5,tb2
+	db tfis5,tp
+	db tfis5,tp
+	db td5,tb3
+	db td5,tb3
+	db td5,tp
+	db td5,tp
+
+;pattern 10
+	db tf5,tcis3
+	db tf5,tcis3
+	db tf5,tp
+	db tf5,tp
+	db tf5,tgis3
+	db tf5,tgis3
+	db tf5,tp
+	db tf5,tp
+	db tf5,tb3
+	db tf5,tb3
+	db tf5,tp
+	db tf5,tp
+	db tf5,td4
+	db tf5,td4
+	db tf5,tp
+	db tf5,tp
+	db tf5,tb3
+	db tf5,tb3
+	db tf5,tp
+	db tf5,tp
+	db tf5,tgis3
+	db tf5,tgis3
+	db tf5,tp
+	db tf5,tp
+	db tf5,tf3
+	db tf5,tf3
+	db tf5,tp
+	db tf5,tp
+	db tf5,tgis3
+	db tf5,tgis3
+	db tf5,tp
+	db tf5,tp
+
+;pattern 11
+	db tf5,tcis4
+	db tf5,tcis4
+	db tf5,tcis4
+	db tf5,tcis4
+	db tf5,tcis3
+	db tf5,tcis3
+	db tf5,tcis3
+	db tf5,tcis3
+	db tf5,tb3
+	db tf5,tb3
+	db tf5,tb3
+	db tf5,tb3
+	db tf5,tcis3
+	db tf5,tcis3
+	db tf5,tcis3
+	db tf5,tcis3
+	db tf5,tgis3
+	db tf5,tgis3
+	db tf5,tp
+	db tf5,tp
+	db tf5,tfis3
+	db tf5,tfis3
+	db tf5,tp
+	db tf5,tp
+	db tf5,tf3
+	db tf5,tf3
+	db tf5,tp
+	db tf5,tp
+	db tf5,tcis3
+	db tf5,tcis3
+	db tf5,tp
+	db tf5,tp
+    
+    ;pattern 12
+    	db tfis5,te3
+	db tfis5,te3
+	db tfis5,tp
+	db tfis5,tp
+	db tfis5,tb3
+	db tfis5,tb3
+	db tfis5,tp
+	db tfis5,tp
+	db tfis5,td4
+	db tfis5,td4
+	db tfis5,tp
+	db tfis5,tp
+	db tfis5,tb3
+	db tfis5,tb3
+	db tfis5,tp
+	db tfis5,tp
+	db tfis5,te3
+	db tfis5,te3
+	db tfis5,tp
+	db tfis5,tp
+	db tfis5,tb3
+	db tfis5,tb3
+	db tfis5,tp
+	db tfis5,tp
+	db tfis5,td4
+	db tfis5,td4
+	db tfis5,tp
+	db tfis5,tp
+	db tfis5,tb3
+	db tfis5,tb3
+	db tfis5,tp
+	db tfis5,tp
+    
+;pattern 13
+	db tfis5,te3
+	db tfis5,te3
+	db tfis5,tp
+	db tfis5,tp
+	db tfis5,te4
+	db tfis5,te4
+	db tfis5,tp
+	db tfis5,tp
+	db tfis5,tfis3
+	db tfis5,tfis3
+	db tfis5,tp
+	db tfis5,tp
+	db tfis5,tfis4
+	db tfis5,tfis4
+	db tfis5,tp
+	db tfis5,tp
+	db tfis5,tf3
+	db tfis5,tf3
+	db tfis5,tp
+	db tfis5,tp
+	db td5,tf4
+	db td5,tf4
+	db td5,tp
+	db td5,tp
+	db tfis5,te3
+	db tfis5,te3
+	db tfis5,tp
+	db tfis5,tp
+	db td5,te4
+	db td5,te4
+	db td5,tp
+	db td5,tp
+
+            DB      0 
+
+
+

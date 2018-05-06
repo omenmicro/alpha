@@ -1,0 +1,8 @@
+org 8000h
+
+loop:
+mvi a,c0h
+sim
+mvi a,40h
+sim
+jmp loop

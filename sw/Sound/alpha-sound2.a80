@@ -1,0 +1,198 @@
+            .ORG    8000h 
+
+                    ;bitone
+
+            DI      
+BEGIN:              
+            LXI     h,melody 
+
+LOOP:               
+            MOV     a,m 
+            ORA     a 
+            JZ      begin 
+            
+            INX     h 
+            STA     tone1 
+            MOV     b,a 
+            CPI     1 
+            MVI     a,0x80 
+            JNZ     nopause1 
+            MVI     a,0x00 
+            sta tone1
+            mov b,a
+NOPAUSE1:   STA     pause1 
+
+            MOV     a,m 
+            STA     tone2 
+            MOV     c,a 
+			INX     h 
+
+            CPI     1 
+            MVI     a,0x80 
+            JNZ     nopause2
+            MVI     a,0x00 
+            sta tone2
+            mov c,a
+NOPAUSE2:   STA     pause2 
+
+			PUSH    h 
+NOPAUSE:            
+            CALL    play 
+            POP     h 
+            JMP     loop 
+
+DURATION    EQU     3000 
+
+PLAY:               
+            LXI     d,duration 
+            MVI     a,0xC0 
+
+PLAYLOOP:           
+            MVI     a,0x40 
+            DCR     b ; 4T
+            JNZ     play2 ; 7T/10T
+
+            MVI     b,00 ; 4T
+TONE1       EQU     $-1 
+            XRI     0x80 ;4T
+PAUSE1      EQU     $-1 
+
+PLAY2:      DCR     C 
+            JNZ     playgo 
+            MVI     c,00 
+TONE2       EQU     $-1 
+            XRI     0x80 
+PAUSE2      EQU     $-1 
+
+
+PLAYGO:             
+            SIM     
+            MOV     l,a ; 4T
+            DCX     d ; 6T
+            MOV     a,d ;4T
+            ORA     e ; 4T
+            MOV     a,l ;4T
+            JNZ     playloop ; 7T / 10T
+            RET     
+                    ;LOOP  duration ~ 50T
+
+
+                    ;equates
+TP          EQU     1 
+TC2         EQU     234 
+TCIS2       EQU     221 
+TD2         EQU     209 
+TDIS2       EQU     197 
+TE2         EQU     186 
+TF2         EQU     175 
+TFIS2       EQU     166 
+TG2         EQU     156 
+TGIS2       EQU     147 
+TA2         EQU     139 
+TAIS2       EQU     131 
+TB2         EQU     124 
+TC3         EQU     117 
+TCIS3       EQU     110 
+TD3         EQU     104 
+TDIS3       EQU     98 
+TE3         EQU     93 
+TF3         EQU     87 
+TFIS3       EQU     83 
+TG3         EQU     78 
+TGIS3       EQU     73 
+TA3         EQU     69 
+TAIS3       EQU     65 
+TB3         EQU     62 
+TC4         EQU     tc3 / 2
+TCIS4       EQU     tcis3 / 2
+TD4         EQU     td3 / 2
+TDIS4       EQU     tdis3 / 2
+TE4         EQU     te3 / 2
+TF4         EQU     tf3 / 2
+TFIS4       EQU     tfis3 / 2
+TG4         EQU     tg3 / 2
+TGIS4       EQU     tgis3 / 2
+TA4         EQU     ta3 / 2
+TAIS4       EQU     tais3 / 2
+TB4         EQU     tb3 / 2
+
+
+MELODY:             
+                    ;DB      tb2,tp,tp,tais3,tb3,tais3,tb3,tais3
+                    ;DB      td3,tp,tp,tcis3,td3,tcis3,td3,tfis3
+                    ;DB      tb2,tp,tp,tais3,tb3,tais3,tb3,tais3
+                    ;DB      tb2,tp,tp,tais3,tb3,tais3,tb3,tp
+                    ;DB      tp,tp,tp,tp,tp,tp,tp,tp
+
+db tg3,tp
+db tc3,tp
+db tg2,tp
+db tp,tp
+db tg2,tp
+db tp,tp
+db tg3,tp
+db tc3,tp
+db tg2,tp
+db tp,tp
+db tg2,tp
+db tp,tp
+db tg3,tp
+db tc3,tp
+db tg2,tp
+db tp,tp
+
+db tais3,tp
+db tdis3,tp
+db tais2,tp
+db tp,tp
+db tais2,tp
+db tp,tp
+db tais3,tp
+db tdis3,tp
+db tais2,tp
+db tp,tp
+db tais2,tp
+db tp,tp
+db tais3,tp
+db tdis3,tp
+db tais2,tp
+db tp,tp
+
+db tg3,te4
+db tc3,tp
+db tg2,te4
+db tp,tp
+db tg2,te4
+db tp,tp
+db tg3,tg4
+db tc3,tp
+db tg2,tc4
+db tp,tp
+db tg2,tc4
+db tp,tp
+db tg3,tg4
+db tc3,tp
+db tg2,tdis4
+db tp,tp
+
+db tais3,tais4
+db tdis3,tp
+db tais2,tais4
+db tp,tp
+db tais2,tais4
+db tp,tp
+db tais3,tgis4
+db tdis3,tp
+db tais2,tgis4
+db tp,tp
+db tais2,tg4
+db tp,tp
+db tais3,tg4
+db tdis3,tp
+db tais2,tf4
+db tp,tp
+
+            DB      0 
+
+
+

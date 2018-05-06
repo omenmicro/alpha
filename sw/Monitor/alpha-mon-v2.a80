@@ -1,0 +1,358 @@
+            .ENGINE alpha 
+            .ORG    0 
+
+                    ; inicializace()
+
+RESET:      DI      
+
+            LXI     SP,STACK 
+
+            JMP     COLD 
+
+            DB      "A" ; padding na osm byte
+RST8:               ;mlo by být na adrese 0008
+            JMP     SEROUT 
+
+
+                    ;--- Servisní rutiny
+
+                    ;--- ======== ACIA
+                    ; adresace sériového rozhraní
+ACIA        EQU     0DEh 
+ACIAC       EQU     ACIA 
+ACIAS       EQU     ACIA 
+ACIAD       EQU     ACIA+1 
+
+ACIA_TDRE   EQU     02h 
+ACIA_RDRF   EQU     01h 
+
+
+SEROUT:             
+            PUSH    PSW 
+SO_WAIT:            
+            IN      ACIAS 
+            ANI     ACIA_TDRE ;bit TDRE - pokud lze vysílat, je =1
+            JZ      SO_WAIT 
+            POP     PSW 
+            OUT     ACIAD 
+            RET     
+
+STROUT:             
+            MOV     A,M 
+            ANI     7Fh 
+            CALL    SEROUT 
+            MOV     A,M 
+            ANI     80h 
+            RNZ     
+            INX     H 
+            JMP     STROUT 
+
+SERIN:              
+            IN      ACIAS 
+            ANI     ACIA_RDRF 
+            RZ      
+            IN      ACIAD 
+            ORA     A 
+            RET     
+                    ;--- ======= ACIA konec
+
+
+                    ; Inicializace
+COLD:               
+                    ;inicializace ACIA
+            MVI     A,15h ; 115200 Bd, 8 bit, no parity, 1 stop bit, no IRQ
+            OUT     ACIAC 
+                    ;Uvítací zpráva
+WARM:               
+            LXI     H,HELLO 
+WARMPRINT:          
+            CALL    STROUT 
+
+MAIN:               
+            MVI     a,">" 
+            RST     1 
+MAINLOOP:           
+            CALL    SERIN 
+            JZ      MAINLOOP 
+            CPI     ":" 
+            JZ      CHEXIN ; pYíkaz : - natení HEX formátu
+            CPI     0Dh 
+            JZ      MAINLOOP 
+            CPI     0AH 
+            JZ      MAINLOOP 
+            CPI "a"
+            jc uppercase
+            sbi 20h
+uppercase:            
+            CPI     "M" 
+            JZ      CMEM ; pYíkaz M - zmna pamti
+            CPI     "G" 
+            JZ      CGO ; pYíkaz G - skok na zadanou adresu
+            CPI     "D" 
+            JZ      CDUMP ; pYíkaz D - výpis pamti
+            LXI     H,WHAT 
+
+            JMP     WARMPRINT 
+
+CMEM:               
+            CALL    GETADDR 
+CMEM1:              
+            MVI     A,0DH 
+            RST     1 
+            MVI     A,0AH 
+            RST     1 
+            CALL    PRINTADDR 
+            MVI     A," " 
+            RST     1 
+            MOV     A,M 
+            CALL    PRINTHEX 
+            MVI     A," " 
+            RST     1 
+            MOV     C,M 
+            CALL    GETBYTE 
+            MOV     M,C 
+            INX     H 
+            MOV     A,B 
+            CPI     0DH 
+            JZ      CMEM1 
+            JMP     MAIN 
+
+CGO:                
+            CALL    GETADDR 
+            PCHL    
+
+DUMPCHARS   EQU     16 
+CDUMP:              
+            CALL    GETADDR 
+            MVI     A,0DH 
+            RST     1 
+            MVI     A,0AH 
+            RST     1 
+CDUMPN:             
+            CALL    PRINTADDR 
+            MVI     c,DUMPCHARS 
+            MVI     A," " 
+            RST     1 
+
+            PUSH    h 
+CDUMP1:             
+            MOV     A,M 
+            CALL    PRINTHEX 
+            INX     h 
+            DCR     c 
+            JNZ     cdump1 
+            POP     h 
+
+            MVI     A," " 
+            RST     1 
+            MVI     C,DUMPCHARS 
+
+CDUMP2:             
+            MOV     A,M 
+            CPI     20h 
+            JC      DUMPSANE 
+            CPI     80h 
+            JC     dumpchar 
+
+DUMPSANE:           
+            MVI     a,"." 
+DUMPCHAR:           
+            CALL    SEROUT 
+            INX     h 
+            DCR     c 
+            JNZ     cdump2 
+
+            MVI     A,0DH 
+            RST     1 
+            MVI     A,0AH 
+            RST     1 
+CDUMPKEY:           
+            CALL    SERIN 
+            JZ      CDUMPKEY 
+            CPI     20h ; mezerník ukoní dump
+            JZ      MAIN 
+            CPI     0dh ; enter jde na dalaí adresu
+            JZ      CDUMPN 
+
+                    ;dump end
+
+            JMP     CDUMPKEY 
+
+CHEXIN:             
+            CALL    GET1BYTE 
+            MOV     C,A 
+            CALL    GET2BYTEREV 
+                    ;type
+            CALL    GET1BYTE 
+            ORA     A 
+            JNZ     HEXLAST 
+                    ;byte2byte
+
+HEXWRITER:          
+            CALL    GET1BYTE 
+            MOV     M,A 
+            INX     H 
+            DCR     C 
+            JNZ     HEXWRITER 
+
+HEXCR:              
+            CALL    SERIN 
+            CPI     0Dh 
+            JNZ     HEXLAST 
+            MVI     A,"$" 
+            CALL    SEROUT 
+            JMP     MAIN 
+
+HEXLAST:            
+            CALL    SERIN 
+            CPI     0Dh 
+            JNZ     HEXLAST 
+            LXI     H,DONE 
+            CALL    STROUT 
+            JMP     MAIN 
+
+
+
+                    ;--- Pomocné rutiny
+
+GETADDR:            
+            LXI     H,ADDR 
+            CALL    STROUT 
+            LXI     H,0 
+GETADDR1:           
+            CALL    SERIN 
+            JZ      GETADDR1 
+            RST     1 
+            CALL    ISHEX 
+            RC      
+            CALL    ATOHEX 
+            DAD     H 
+            DAD     H 
+            DAD     H 
+            DAD     H 
+            ADD     L 
+            MOV     L,A 
+            JMP     GETADDR1 
+
+
+GET1BYTE:           
+            CALL    SERIN 
+            JZ      GET1BYTE 
+            CALL    ATOHEX 
+            ADD     A 
+            ADD     A 
+            ADD     A 
+            ADD     A 
+            MOV     B,A 
+GET1B1:             
+            CALL    SERIN 
+            JZ      GET1B1 
+            CALL    ATOHEX 
+            ADD     B 
+            RET     
+
+GET2BYTEREV:        
+            CALL    GET1BYTE 
+            MOV     H,A 
+            CALL    GET1BYTE 
+            MOV     L,A 
+            RET     
+
+
+GETBYTE:            
+            MVI     B,0 
+GETBYTE1:           
+            CALL    SERIN 
+            JZ      GETBYTE1 
+            RST     1 
+            CALL    ISHEX 
+            MOV     B,A 
+            RC      
+            CALL    ATOHEX 
+            MOV     D,A 
+            MOV     A,C 
+            ADD     A 
+            ADD     A 
+            ADD     A 
+            ADD     A 
+            ADD     D 
+            MOV     C,A 
+            JMP     GETBYTE1 
+
+ISHEX:              
+            CPI     "F"+1 
+            CMC
+            RC
+            CPI     "0" 
+            RC      
+            CPI "9"+1
+            CMC
+            RNC
+            CPI     "A" 
+            RET         
+
+ATOHEX:             
+            SBI     "0" 
+            CPI     0Ah 
+            RC      
+            SBI     "A"-"9"-1 
+            RET     
+
+PRINTADDR:          
+            MOV     A,H 
+            CALL    PRINTHEX 
+            MOV     A,L 
+PRINTHEX:           
+            PUSH    PSW 
+            RAR     
+            RAR     
+            RAR     
+            RAR     
+            ANI     0fh 
+            ADI     "0" 
+            CPI     "9"+1 
+            JC      PRINTHEX1 
+            ADI     7 
+PRINTHEX1:          
+            RST     1 
+            POP     PSW 
+            ANI     0FH 
+            ADI     "0" 
+            CPI     "9"+1 
+            JC      SEROUT 
+            ADI     7 
+            JMP     SEROUT 
+
+
+                    ;--- Hláaky Monitoru
+
+HELLO:              
+            DB      "OMEN ALPHA",0Dh,0Ah 
+            DB      "MONITOR V2",0Dh,0AH 
+            .ISTR   "READY",0DH,0AH,0AH 
+
+WHAT:               
+            .ISTR   "WHAT?",0Dh,0Ah 
+
+ADDR:               
+            .ISTR   'Addr:' 
+
+DONE:               
+            .ISTR   'DONE',0Dh,0Ah 
+
+                    ;--- Operaní pame pro MONITOR - na konci RAM
+            .ORG    0FFFCh 
+STACK       EQU     $ 
+RAMTOP      EQU     $ 
+LASTKEY:    DS      1 
+BUFA:       DS      2 
+RAMEND      EQU     $ 
+
+
+
+
+
+
+
+
+

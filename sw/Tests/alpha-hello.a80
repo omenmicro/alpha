@@ -1,0 +1,54 @@
+            .ENGINE alpha 
+            .ORG    0 
+
+                    ; inicializace()
+
+COLD:       DI      
+
+            LXI     SP,0FFFFh 
+
+                    ; adresace sériového rozhraní
+ACIA        EQU     0DEh 
+ACIAC       EQU     ACIA 
+ACIAS       EQU     ACIA 
+ACIAD       EQU     ACIA+1 
+
+ACIA_TDRE   EQU     02h 
+
+fill DI
+
+                    ;inicializace ACIA
+            MVI     A,15h ; 115200 Bd, 8 bit, no parity, 1 stop bit, no IRQ
+            OUT     ACIAC 
+
+WARM:               
+            LXI     H,HELLO 
+            CALL    STROUT 
+
+            JMP     WARM 
+
+SEROUT:             
+            PUSH    PSW 
+SO_WAIT:            
+            IN      ACIAS 
+            ANI     ACIA_TDRE ;bit TDRE - pokud lze vysílat, je =1
+            JZ      SO_WAIT 
+            POP     PSW 
+            OUT     ACIAD 
+            RET     
+
+STROUT:             
+            MOV     A,M 
+            ANI     7Fh 
+            CALL    SEROUT 
+            MOV     A,M 
+            ANI     80h 
+            RNZ     
+            INX     H 
+            JMP     STROUT 
+
+HELLO:              
+            .ISTR      "HELLO WORLD",0Dh,0Ah 
+
+
+
