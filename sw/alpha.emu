@@ -1,0 +1,12 @@
+cpu I8080
+
+serial 6850
+serial.data 0xDF
+serial.control 0xDE
+
+terminal.caps 1
+
+memory.ram.from 0x8000
+memory.ram.to 0xffff
+memory.rom.from 0x0000
+memory.rom.to 0x7fff
