@@ -16087,11 +16087,11 @@ new: Attribute TP_SIGNAL_NAME&lt;br&gt;
 </class>
 </classes>
 <parts>
-<part name="IC1" library="micro-intel" deviceset="8085" device=""/>
+<part name="IC1" library="micro-intel" deviceset="8085" device="" value="80C85"/>
 <part name="IC2" library="74xx-eu" deviceset="74*573" device="N" technology="HC"/>
 <part name="Q1" library="crystal" deviceset="CRYSTAL" device="HC49S" value="3.6864"/>
-<part name="C1" library="rcl" deviceset="C-EU" device="025-040X050" value="56"/>
-<part name="C2" library="rcl" deviceset="C-EU" device="025-040X050" value="56"/>
+<part name="C1" library="rcl" deviceset="C-EU" device="025-040X050" value="33"/>
+<part name="C2" library="rcl" deviceset="C-EU" device="025-040X050" value="33"/>
 <part name="GND1" library="supply1" deviceset="GND" device=""/>
 <part name="GND2" library="supply1" deviceset="GND" device=""/>
 <part name="GND3" library="supply1" deviceset="GND" device=""/>
@@ -16110,7 +16110,7 @@ new: Attribute TP_SIGNAL_NAME&lt;br&gt;
 <part name="D1" library="diode" deviceset="1N4004" device=""/>
 <part name="GND9" library="supply1" deviceset="GND" device=""/>
 <part name="D2" library="Seeed-LED" library_urn="urn:adsk.eagle:library:472" deviceset="DIP-LED-GREEN-GREEN(2P-D5MM)" device="" package3d_urn="urn:adsk.eagle:package:32744/1" value="G502DC"/>
-<part name="R3" library="rcl" deviceset="R-EU_" device="0207/7"/>
+<part name="R3" library="rcl" deviceset="R-EU_" device="0207/7" value="330"/>
 <part name="GND10" library="supply1" deviceset="GND" device=""/>
 <part name="IC3" library="memory-hitachi" deviceset="62256P" device="" value="62256"/>
 <part name="IC4" library="memory" deviceset="28C256" device=""/>
@@ -16121,7 +16121,7 @@ new: Attribute TP_SIGNAL_NAME&lt;br&gt;
 <part name="IC5" library="74xx-eu" deviceset="74*00" device="N" technology="HCT"/>
 <part name="P+7" library="supply1" deviceset="VCC" device=""/>
 <part name="GND13" library="supply1" deviceset="GND" device=""/>
-<part name="IC6" library="micro-motorola" deviceset="6850" device=""/>
+<part name="IC6" library="micro-motorola" deviceset="6850" device="" value="68B50"/>
 <part name="GND15" library="supply1" deviceset="GND" device=""/>
 <part name="GND16" library="supply1" deviceset="GND" device=""/>
 <part name="P+8" library="supply1" deviceset="VCC" device=""/>
@@ -16135,7 +16135,7 @@ new: Attribute TP_SIGNAL_NAME&lt;br&gt;
 <part name="C9" library="rcl" deviceset="C-EU" device="050-025X075"/>
 <part name="P+9" library="supply1" deviceset="VCC" device=""/>
 <part name="GND17" library="supply1" deviceset="GND" device=""/>
-<part name="IC8" library="micro-intel" deviceset="8255A" device=""/>
+<part name="IC8" library="micro-intel" deviceset="8255A" device="" value="82C55"/>
 <part name="JP2" library="pinhead" deviceset="PINHD-2X5" device=""/>
 <part name="JP3" library="pinhead" deviceset="PINHD-2X5" device=""/>
 <part name="JP4" library="pinhead" deviceset="PINHD-2X5" device=""/>
@@ -16146,7 +16146,7 @@ new: Attribute TP_SIGNAL_NAME&lt;br&gt;
 <part name="C11" library="rcl" deviceset="C-EU" device="050-025X075"/>
 <part name="P+11" library="supply1" deviceset="VCC" device=""/>
 <part name="GND19" library="supply1" deviceset="GND" device=""/>
-<part name="C12" library="rcl" deviceset="C-EU" device="050-025X075"/>
+<part name="C12" library="rcl" deviceset="C-EU" device="050-025X075" value="100n"/>
 <part name="C8" library="rcl" deviceset="C-EU" device="050-025X075"/>
 <part name="GND20" library="supply1" deviceset="GND" device=""/>
 <part name="P+12" library="supply1" deviceset="VCC" device=""/>
