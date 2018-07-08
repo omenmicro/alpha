@@ -1,0 +1,366 @@
+;OMEN ALPHA
+
+;QYF-TM1638 module driver
+
+;Where to buy?
+;EBAY: https://ebay.to/2J1Ajtv
+;AliExpress: http://s.click.aliexpress.com/e/AIMrjYr
+
+;connect on these pins:
+;VCC = VCC
+;GND = GND
+;DIO = PORTC bit 7
+;CLK = PORTC bit 1
+;STB = PORTC bit 0
+
+; On the OMEN board - JP4 / PORT C:
+; +-----+-----+-----+-----+-----+
+; | GND | DIO |  -  |  -  |  -  | 
+; +-----+-----+-----+-----+-----+
+; | VCC | STB | CLK |  -  |  -  | 
+; +-----+-----+-----+-----+-----+
+
+org 8000h
+.ent $
+di
+lxi sp,0
+jmp test
+
+;PINS OF PORTC
+qyf_clk equ 1
+qyf_stb equ 0
+qyf_dio equ 7
+
+PPI_CTRL equ 7
+PPI_PORTC equ 6
+
+.macro clk1
+ mvi a,qyf_clk*2+1
+ out PPI_CTRL
+.endm
+.macro clk0
+ mvi a,qyf_clk*2
+ out PPI_CTRL
+.endm
+
+.macro stb1
+ mvi a,qyf_stb*2+1
+ out PPI_CTRL
+.endm
+.macro stb0
+ mvi a,qyf_stb*2
+ out PPI_CTRL
+.endm
+
+.macro dio1
+ mvi a,qyf_dio*2+1
+ out PPI_CTRL
+.endm
+.macro dio0
+ mvi a,qyf_dio*2
+ out PPI_CTRL
+.endm
+
+qyf_rec:
+    ;dio1
+    lxi b,0800h
+qyf_rec1:    
+    clk0
+    in PPI_PORTC
+    rlc
+    mov a,c
+    ral
+    mov c,a
+    clk1
+    dcr b
+    jnz qyf_rec1
+    ret
+
+
+qyf_send:
+    mvi b,8
+qyf_sendl:
+    clk0
+    mov a,c
+    rrc
+    mov c,a
+    mvi a,qyf_dio*2
+    aci 0
+    out PPI_CTRL
+    dcr b
+    clk1
+    jnz qyf_sendl
+    ret
+
+; C = command
+
+qyf_sendCommand:
+    stb0
+    call qyf_send
+    stb1
+    ret
+
+;d=addr, e=dta
+qyf_sendData:
+    mvi c,044h
+    call qyf_sendCommand
+    stb0
+    mov a,d
+    ori 0c0h
+    mov c,a
+    call qyf_send
+    mov c,e
+    call qyf_send
+    stb1
+    ret
+    
+qyf_setup:
+    mvi c,87h+4 ;80 + active * 8 + intensity
+    call qyf_sendCommand
+    stb0
+    clk0
+    clk1
+    stb1
+
+qyf_init:
+    mvi a,10010010b; A,B=in,CH=CL=out
+    out PPI_CTRL
+    stb1
+    clk1
+    mvi c,0x40
+    call qyf_sendCommand
+    mvi c,87h+4 ;80 + active * 8 + intensity
+    call qyf_sendCommand
+    stb0
+    mvi c,0xc0
+    call qyf_send
+    mvi e,16
+    mvi c,0
+qyf_initl:
+    call qyf_send
+    dcr e
+    jnz qyf_initl
+    stb1
+    ret
+qyf_display:
+    lxi h,qyf_buffer
+    mvi d,10h
+qyf_dl:
+    dcr d
+    dcr d
+    mov e,m
+    call qyf_sendData
+    inx h
+    mov a,d
+    ora a
+    jnz qyf_dl
+
+qyf_get:
+    stb0
+    mvi c,42h
+    call qyf_send
+    
+    dio0
+    mvi a,10011010b; A,B=in,CL=out,CH=IN
+    out PPI_CTRL
+    
+    lxi h,qyf_kbd
+    call qyf_rec
+    mov m,c
+    inx h
+
+    call qyf_rec
+    mov m,c
+    inx h
+
+    call qyf_rec
+    mov m,c
+    inx h
+
+    call qyf_rec
+    mov m,c
+    stb1
+    mvi a,10010010b; A,B=in,CH=CL=out
+    out PPI_CTRL
+    
+    ret
+
+
+qyf_buffer:
+    db 0,16,16,16,16,16,16,16
+
+qyf_kbd: db 0,0,0,0    
+
+;d=pos (0=leftmost)
+;c=char
+qyf_set:    
+    mvi a,80h
+    inr d
+qyf_s1:
+    rlc
+    dcr d
+    jnz qyf_s1
+    ;mask in a
+    mov d,a
+    cma
+    mov e,a
+    lxi h,qyf_buffer
+    mvi b,8
+qyf_s2:
+    mov a,c
+    rlc
+    mov c,a
+    mov a,m
+    jc qyf_ss
+;bit reset
+    ana e
+    jmp qyf_sx
+qyf_ss:
+    ora d
+qyf_sx:
+    mov m,a
+    inx h
+    dcr b
+    jnz qyf_s2
+    ret
+    
+qyf_d0:  
+    dad h
+    ret
+    
+qyf_d1:  
+    dad h
+    inx h
+    ret
+    
+qyf_decode:
+    lxi h,0
+    
+    lda qyf_kbd+3
+    ani 04h
+    cz qyf_d0
+    cnz qyf_d1
+
+    lda qyf_kbd+3
+    ani 40h
+    cz qyf_d0
+    cnz qyf_d1
+
+    lda qyf_kbd+2
+    ani 04h
+    cz qyf_d0
+    cnz qyf_d1
+
+    lda qyf_kbd+2
+    ani 40h
+    cz qyf_d0
+    cnz qyf_d1
+
+    lda qyf_kbd+1
+    ani 04h
+    cz qyf_d0
+    cnz qyf_d1
+
+    lda qyf_kbd+1
+    ani 40h
+    cz qyf_d0
+    cnz qyf_d1
+
+    lda qyf_kbd+0
+    ani 04h
+    cz qyf_d0
+    cnz qyf_d1
+
+    lda qyf_kbd+0
+    ani 40h
+    cz qyf_d0
+    cnz qyf_d1
+
+    lda qyf_kbd+3
+    ani 02h
+    cz qyf_d0
+    cnz qyf_d1
+
+    lda qyf_kbd+3
+    ani 20h
+    cz qyf_d0
+    cnz qyf_d1
+
+    lda qyf_kbd+2
+    ani 02h
+    cz qyf_d0
+    cnz qyf_d1
+
+    lda qyf_kbd+2
+    ani 20h
+    cz qyf_d0
+    cnz qyf_d1
+
+    lda qyf_kbd+1
+    ani 02h
+    cz qyf_d0
+    cnz qyf_d1
+
+    lda qyf_kbd+1
+    ani 20h
+    cz qyf_d0
+    cnz qyf_d1
+
+    lda qyf_kbd+0
+    ani 02h
+    cz qyf_d0
+    cnz qyf_d1
+
+    lda qyf_kbd+0
+    ani 20h
+    cz qyf_d0
+    cnz qyf_d1
+    ret
+
+test: 
+    call qyf_setup
+
+    mvi d,2
+    mvi c,0x0
+    call qyf_set
+
+    mvi d,7
+    mvi c,01110110b
+    call qyf_set
+
+    mvi d,6
+    mvi c,01111001b
+    call qyf_set
+
+    mvi d,5
+    mvi c,00111000b
+    call qyf_set
+
+    mvi d,4
+    mvi c,00111000b
+    call qyf_set
+
+    mvi d,3
+    mvi c,10111111b
+    call qyf_set
+
+    call qyf_display
+    
+    call qyf_decode
+
+
+    mov c,l
+    mvi d,0
+    push h
+    call qyf_set
+    pop h
+    mov c,h
+    mvi d,1
+    call qyf_set
+
+
+    call qyf_display
+    
+    
+    
+    rst 0
