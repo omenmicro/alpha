@@ -1,42 +1,44 @@
-                    ; 
-                    ; MON85: A software debugger for the 8080/8085 processor
-                    ; 
-                    ; Copyright 1979-2007 Dave Dunfield
-                    ; All rights reserved.
-                    ; 
-                    ; Version 1.2 - 2012 Roman Borik
-                    ; 
-                    ; New in version 1.2
-                    ; - Support for undocumented 8085 instructions.
-                    ;   DSUB B, ARHL, RDEL, LDHI d8, LDSI d8, LHLX D, SHLX D, JNK a16, JK a16, RSTV
-                    ; - Command R displays all flags of F register (SZKA3PVC). If flag is not set
-                    ;   dash '-' is displayed.
-                    ; - Added restart vector RST 8 (0040h) for possibility to handle RSTV call.
-                    ; - Changed TRACE mode. After entering TRACE mode, instruction on actual PC and
-                    ;   content of registers (if it is switched on) are displayed.
-                    ;   Entering a space ' ' executes this instruction, and returns to the 'T>'
-                    ;   prompt with the next instruction.
-                    ; - Instructions LXI, DAD, INX, DCX displays argument 'SP' rather than 'S'.
-                    ; - Commands that requires 1 byte parameter raises error if entered value
-                    ;   not fit to 1 byte.
-                    ; - Command 'C' checks overlap of source and destination block and for copying
-                    ;   uses appropriate direction.
-                    ; - Command 'F' checks <start> and <end> parameters and raises error,
-                    ;   if <end> is lower than <start>.
-                    ; - Added command 'H' to send out memory content in Intel HEX format.
-                    ; - Sending of LF and CR characters were reversed and are sent in the usual
-                    ;   order - CR first and followed by LF.
+; 
+; MON85: A software debugger for the 8080/8085 processor
+; 
+; Copyright 1979-2007 Dave Dunfield
+; All rights reserved.
+; 
+; Version 1.2 - 2012 Roman Borik
+; 
+; New in version 1.2
+; - Support for undocumented 8085 instructions.
+;   DSUB B, ARHL, RDEL, LDHI d8, LDSI d8, LHLX D, SHLX D, JNK a16, JK a16, RSTV
+; - Command R displays all flags of F register (SZKA3PVC). If flag is not set
+;   dash '-' is displayed.
+; - Added restart vector RST 8 (0040h) for possibility to handle RSTV call.
+; - Changed TRACE mode. After entering TRACE mode, instruction on actual PC and
+;   content of registers (if it is switched on) are displayed.
+;   Entering a space ' ' executes this instruction, and returns to the 'T>'
+;   prompt with the next instruction.
+; - Instructions LXI, DAD, INX, DCX displays argument 'SP' rather than 'S'.
+; - Commands that requires 1 byte parameter raises error if entered value
+;   not fit to 1 byte.
+; - Command 'C' checks overlap of source and destination block and for copying
+;   uses appropriate direction.
+; - Command 'F' checks <start> and <end> parameters and raises error,
+;   if <end> is lower than <start>.
+; - Added command 'H' to send out memory content in Intel HEX format.
+; - Sending of LF and CR characters were reversed and are sent in the usual
+;   order - CR first and followed by LF.
 
             .ENGINE alpha 
 
 ROM         EQU     0000h 
-DRAM        EQU     0FFA0h 
+DRAM        EQU     0FFA0h - 2
 
-                    ; 
-                    ; Debugger data area (in RAM)
-                    ; 
+; 
+; Debugger data area (in RAM)
+; 
             .ORG    DRAM ; Monitor data goes here
-                    ; 
+; 
+ACIAFX:     DS      1 ; ACIA overrun flag
+ACIADX:     DS      1 ; ACIA overrun data
 UBASE:      DS      2 ; Base address of user program
 HL:         DS      2 ; Saved HL register pair
 DE:         DS      2 ; Saved DE register pair
@@ -52,23 +54,24 @@ BRKTAB:     DS      24 ; Breakpoint table
 INST:       DS      6 ; Save area for "faking" instructions
 BUFFER:     DS      48 ; Input/temp buffer & stack
 DSTACK      EQU     $&0FFFFh 
-                    ; 
-                    ; Startup code... Kick off the monitor
-                    ; 
+; 
+; Startup code... Kick off the monitor
+; 
             .ORG    ROM ; Debugger code goes here
-                    ; 
+            .ent $
+; 
             LXI     SP,DSTACK ; Set up initial stack pointer
             JMP     TEST ; Execute main program
             DS      2 ; Filler bytes to first int
-                    ; 
-                    ; Interrupt handlers for RESTART interrupts
-                    ; 
-                    ; Although they RST 1.5, 2.5 and 3.5 vectors are not used by the
-                    ; 8085 hardware,  they are included since the space must contain
-                    ; SOMETHING,  and who knows,  perhaps someone uses them for jump
-                    ; table addresses etc...
-                    ; 
-                    ; Restart 1 is the entry point for breakpoints
+; 
+; Interrupt handlers for RESTART interrupts
+; 
+; Although they RST 1.5, 2.5 and 3.5 vectors are not used by the
+; 8085 hardware,  they are included since the space must contain
+; SOMETHING,  and who knows,  perhaps someone uses them for jump
+; table addresses etc...
+; 
+; Restart 1 is the entry point for breakpoints
 RST1:       JMP     ENTRY ; Execute handler
             DS      1 ; Filler to next int
 RST15:      CALL    RSTINT ; Invoke interrupt
@@ -99,32 +102,32 @@ RST75:      CALL    RSTINT ; Invoke interrupt
             DB      60 ; Offset to handler
 RST8:       CALL    RSTINT ; Invoke interrupt
             DB      64 ; Offset to handler
-                    ; 
-                    ; Process a RESTART interrupt, get offset & vector to code
-                    ; To speed processing, it is assumed that the user program
-                    ; base address begins on a 256 byte page boundary.
-                    ; 
-RSTINT:     XTHL    ; Save HL, Get PTR to offset
+; 
+; Process a RESTART interrupt, get offset & vector to code
+; To speed processing, it is assumed that the user program
+; base address begins on a 256 byte page boundary.
+; 
+RSTINT:     XTHL     ; Save HL, Get PTR to offset
             PUSH    PSW ; Save A and CC
             MOV     A,M ; Get offset
             LHLD    UBASE ; Get high of user program
             MOV     L,A ; Set low address
             POP     PSW ; Restore A & CC
-            XTHL    ; Restore HL, set
-            RET     ; Vector to interrupt
-                    ; 
-                    ; Register -> text translation tables used by the disassembler. These tables
-                    ; go here (near beginning) so that we can be sure the high address will not
-                    ; cross a page boundary allowing us to index by modifying low address only.
-                    ; 
+            XTHL     ; Restore HL, set
+            RET      ; Vector to interrupt
+; 
+; Register -> text translation tables used by the disassembler. These tables
+; go here (near beginning) so that we can be sure the high address will not
+; cross a page boundary allowing us to index by modifying low address only.
+; 
 RTAB:       DB      "BCDEHLMA" ; Table of register names
 RPTAB:      DB      "BDHS" ; Table of register pairs
-                    ; 
-                    ; Entry point for breakpoints & program tracing
-                    ; 
-                    ; Save the user program registers
+; 
+; Entry point for breakpoints & program tracing
+; 
+; Save the user program registers
 ENTRY:      SHLD    HL ; Save HL
-            XCHG    ; Get DE
+            XCHG     ; Get DE
             SHLD    DE ; Save DE
             POP     H ; Get RET addrss
             SHLD    PC ; Save PC
@@ -143,7 +146,7 @@ ENTRY:      SHLD    HL ; Save HL
             SHLD    PC ; Save PC
             LXI     D,BRKTAB ; Point to breakpoint table
             MVI     B,'0' ; Assume breakpoint #0
-                    ; Search breakpoint table & see if this is a breakpoint
+; Search breakpoint table & see if this is a breakpoint
 TRYBRK:     LDAX    D ; Get HIGH byte from table
             INX     D ; Advance
             CMP     H ; Does it match?
@@ -157,15 +160,15 @@ NOTBRK:     INX     D ; Skip saved code byte
             MOV     A,B ; Get breakpoint number
             CPI     '0'+8 ; Table exausted
             JC      TRYBRK ; No, keep looking
-                    ; This interrupt is NOT a breakpoint
+; This interrupt is NOT a breakpoint
             JMP     NOBK ; Enter with no breakpoint
-                    ; This interrupt is a breakpoint, display the message
+; This interrupt is a breakpoint, display the message
 FOUND:      CALL    PRTMSG ; Output message
             DB      "** Breakpoint ",0 
             MOV     A,B ; Get breakpoint number
             CALL    OUT ; Output it
             CALL    CRLF ; New line
-                    ; Reenter monitor, first, restore all breakpoint opcodes
+; Reenter monitor, first, restore all breakpoint opcodes
 NOBK:       LXI     H,BRKTAB ; Point to breakpoint table
             MVI     B,8 ; 8 breakpoints
 FIXL:       MOV     D,M ; Get HIGH address
@@ -187,11 +190,11 @@ NOFIX:      INX     H ; Skip opcode
             ANA     A ; Is it enabled?
             CNZ     REGDIS ; Yes, display the registers
             JMP     REST ; Enter monitor
-                    ; Prompt for and handle trace mode commands
+; Prompt for and handle trace mode commands
 TRTB:       CALL    PRTMSG ; Output message
             DB      "T> ",0 ; Trace mode prompt
             LHLD    PC ; Get PC
-            XCHG    ; Move to DE
+            XCHG     ; Move to DE
             CALL    DINST ; Disassemble the instruction
             CALL    CRLF ; New line
             LDA     AFLAG ; Get auto register display flag
@@ -206,13 +209,13 @@ TRL:        CALL    INCHR ; Get a command character
             JNZ     TRL ; No, ignore it
             CALL    REGDIS ; Display the registers
             JMP     TRTB ; And go again
-                    ; 
-                    ; Main entry point for the 8080 debugger
-                    ; 
+; 
+; Main entry point for the 8080 debugger
+; 
 TEST:       CALL    INIT ; Set up hardware
             CALL    PRTMSG ; Output herald message
             DB      0Dh,0Ah 
-            DB      "MON85 Version 1.2" 
+            DB      "MON85 Version 1.2+" 
             DB      0Dh,0Ah,0Ah 
             DB      "Copyright 1979-2007 Dave Dunfield" 
             DB      0Dh,0Ah 
@@ -230,14 +233,14 @@ INIL1:      MVI     M,0 ; Clear a byte
             SHLD    SFLAG ; Turn on SUBTRACE & AUTOREG
             LXI     H,UBASE ; Default user stack (below monitor RAM)
             SHLD    SP ; Set user SP
-                    ; Newline and prompt for command
+; Newline and prompt for command
 RECR:       CALL    CRLF ; Output a newline
-                    ; Prompt for an input command
+; Prompt for an input command
 REST:       LXI     SP,DSTACK ; Reset stack pointer
             CALL    PRTMSG ; Output message
             DB      "C> ",0 ; Command prompt
             CALL    INPT ; Get command character
-                    ; Look up command in table
+; Look up command in table
             MOV     B,A ; Save for later
             LXI     H,CTABLE ; Point to command table
 REST1:      MOV     A,M ; Get char
@@ -248,19 +251,19 @@ REST1:      MOV     A,M ; Get char
             INX     H ; Skip LOW address
             ANA     A ; end of table?
             JNZ     REST1 ; Its OK
-                    ; Error has occured, issue message & return for command
+; Error has occured, issue message & return for command
 ERROR:      MVI     A,'?' ; Error indicator
             CALL    OUT ; Display
             JMP     RECR ; And wait for command
-                    ; We have command, execute it
+; We have command, execute it
 REST2:      INX     D ; Skip command character
             MOV     A,M ; Get low address
             INX     H ; Skip to next
             MOV     H,M ; Get HIGH address
             MOV     L,A ; Set LOW
             CALL    SKIP ; Set 'Z' of no operands
-            PCHL    ; And execute
-                    ; Table of commands to execute
+            PCHL     ; And execute
+; Table of commands to execute
 CTABLE:     DB      'A' ; Set AUTOREG flag
             DW      AUTO 
             DB      'B' ; Set/Display breakpoint
@@ -297,13 +300,13 @@ CTABLE:     DB      'A' ; Set AUTOREG flag
             DW      HELP 
             DB      0 ; End of table
             DW      REST ; Handle NULL command
-                    ; 
-                    ; Help command
-                    ; 
+; 
+; Help command
+; 
 HELP:       LXI     H,HTEXT ; Point to help text
             SUB     A ; Get a zero
             STA     OFLAG ; Clear the output flag
-                    ; Output each line
+; Output each line
 HELP1:      MVI     C,25 ; Column counter
 HELP2:      MOV     A,M ; Get character
             INX     H ; Advance to next
@@ -314,7 +317,7 @@ HELP2:      MOV     A,M ; Get character
             CALL    OUT ; Write character
             DCR     C ; Reduce count
             JMP     HELP2 ; Keep going
-                    ; Fill with spaces to discription column
+; Fill with spaces to discription column
 HELP3:      CALL    SPACE ; Output a space
             DCR     C ; Reduce count
             JNZ     HELP3 ; Do them all
@@ -322,15 +325,15 @@ HELP3:      CALL    SPACE ; Output a space
             CALL    OUT ; Display
             CALL    SPACE ; And space over
             JMP     HELP2 ; Output rest of line
-                    ; End of line encountered...
+; End of line encountered...
 HELP4:      CALL    CHKSUS ; New line
             MOV     A,M ; Get next byte
             ANA     A ; End of text?
             JNZ     HELP1 ; Do them all
             JMP     RECR ; And go home
-                    ; 
-                    ; Input from port
-                    ; 
+; 
+; Input from port
+; 
 INPUT:      CALL    CALC8 ; Get port number
             MVI     A,0DBh ; 'IN' instruction
             MVI     H,0C9h ; 'RET' instruction
@@ -341,9 +344,9 @@ INPUT:      CALL    CALC8 ; Get port number
             CALL    INST ; Perform the read
             CALL    HPR ; Output it
             JMP     RECR ; Newline & EXIT
-                    ; 
-                    ; Output to port
-                    ; 
+; 
+; Output to port
+; 
 OUTPUT:     CALL    CALC8 ; Get port number
             MVI     A,0D3h ; 'OUT' instruction
             MVI     H,0C9h ; 'RET' instruction
@@ -352,11 +355,11 @@ OUTPUT:     CALL    CALC8 ; Get port number
             CALL    CALC8 ; Get data byte
             CALL    INST ; Output the data
             JMP     REST ; Back to command prompt
-                    ; 
-                    ; Set breakpoint command
-                    ; 
+; 
+; Set breakpoint command
+; 
 SETBRK:     JZ      DISBRK ; No operands, display breakpoints
-                    ; Set a breakpoint
+; Set a breakpoint
             CALL    CALC8 ; Get hex operand
             CPI     8 ; In range?
             JNC     ERROR ; No, invalud
@@ -368,7 +371,7 @@ SBRLP:      DAD     B ; Advance to next breakpoint
             PUSH    H ; Save table address
             CALL    CALC ; Get address
             POP     D ; Restore address
-            XCHG    ; D=brkpt address, H=table address
+            XCHG     ; D=brkpt address, H=table address
             MOV     M,D ; Set HIGH address in table
             INX     H ; Advance
             MOV     M,E ; Set LOW address in table
@@ -376,7 +379,7 @@ SBRLP:      DAD     B ; Advance to next breakpoint
             LDAX    D ; Get opcode from memory
             MOV     M,A ; Save in table
             JMP     REST ; And get next command
-                    ; Display breakpoints
+; Display breakpoints
 DISBRK:     LXI     D,BRKTAB ; Point to breakpoint table
             MVI     B,'0' ; Begin with breakpoint zero
 DISLP:      MVI     A,'B' ; Lead in character
@@ -394,7 +397,7 @@ DISLP:      MVI     A,'B' ; Lead in character
             JZ      NOTSET ; No, don't display
             CALL    HLOUT ; Output in hex
             JMP     GIVLF ; And proceed
-                    ; Breakpoint is not set
+; Breakpoint is not set
 NOTSET:     CALL    PRTMSG ; Output message
             DB      "****",0 ; Indicate not set
 GIVLF:      MVI     A,' ' ; Get a space
@@ -421,7 +424,7 @@ GIVLF:      MVI     A,' ' ; Get a space
             CALL    DISON ; Display ON/OFF indication
             CALL    CRLF ; New line
             JMP     REST ; Back for another command
-                    ; Display ON/OFF flag state
+; Display ON/OFF flag state
 DISON:      PUSH    PSW ; Save A
             CALL    PRTSTR ; Output message
             POP     PSW ; Restore A
@@ -430,30 +433,30 @@ DISON:      PUSH    PSW ; Save A
             JZ      PRTSTR ; Yes, display OFF
             LXI     H,ON ; Convert to ON
             JMP     PRTSTR ; And display ON
-                    ; 
-                    ; GO command, Begin program execution
-                    ; 
+; 
+; GO command, Begin program execution
+; 
 GO:         JZ      NOHEX ; Address not given, assume default
             CALL    CALC ; Get argument
             SHLD    PC ; Save new PC value
 NOHEX:      LDA     TFLAG ; Get trace flag
             ANA     A ; Enabled?
             JNZ     TRTB ; Yes, wait for prompt
-                    ; Single-step one instruction...
-                    ; Used for first instruction even when NOT tracing, so
-                    ; that we can insert breakpoints
+; Single-step one instruction...
+; Used for first instruction even when NOT tracing, so
+; that we can insert breakpoints
 NOADR:      SUB     A ; Get NOP
             MOV     H,A ; Set high
             MOV     L,A ; Set LOW
             STA     INST ; Set first byte
             SHLD    INST+1 ; Set second & third
             LHLD    PC ; Get PC
-            XCHG    ; Set DE to PC
+            XCHG     ; Set DE to PC
             CALL    LOOK ; Lookup instruction
             MOV     B,A ; Save the TYPE/LENGTH byte
             ANI     03h ; Mask TYPE, save LENGTH
             MOV     C,A ; Save for count
-                    ; Copy instruction into "faking" area
+; Copy instruction into "faking" area
             LXI     H,INST ; Point to saved instruction
 GOSET:      LDAX    D ; Get byte from code
             MOV     M,A ; Save in instruction
@@ -461,7 +464,7 @@ GOSET:      LDAX    D ; Get byte from code
             INX     D ; Advance input
             DCR     C ; Reduce count
             JNZ     GOSET ; Copy it all
-            XCHG    ; HL = addrss to execute
+            XCHG     ; HL = addrss to execute
             MVI     A,0C3h ; Get a JMP instruction
             STA     INST+3 ; Set up a JUMP instruction
             SHLD    INST+4 ; Set target address
@@ -475,7 +478,7 @@ GOSET:      LDAX    D ; Get byte from code
             LXI     H,FAKE ; Point to FAKE routine
             SHLD    INST+4 ; Save new addres
             POP     B ; Restore TYPE/LENGTH
-                    ; Simulate any control transfer instruction
+; Simulate any control transfer instruction
             LDA     INST ; Get instruction
             CPI     0E9h ; Is it PCHL?
             JNZ     NOPCHL ; No, skip
@@ -509,67 +512,67 @@ NOJNK:      MOV     A,B ; Get TYPE back
             ANI     08h ; Does this test require COMPLEMENTED flags
             LDA     PSW ; Get status flags
             JZ      NOCOM ; No need to complement
-            CMA     ; Invert for NOT tests
+            CMA      ; Invert for NOT tests
 NOCOM:      MOV     C,A ; Save PSW bits
             MOV     A,B ; Get conditon back
-            RAL     ; Is it SIGN flag?
+            RAL      ; Is it SIGN flag?
             JC      SIGN ; Yes, handle it
-            RAL     ; Is it ZERO flag?
+            RAL      ; Is it ZERO flag?
             JC      ZERO ; Yes, handle it
-            RAL     ; Is it PARITY flag?
+            RAL      ; Is it PARITY flag?
             JC      PARITY ; Yes, handle it
-                    ; This instruction is conditional on the CARRY flag
+; This instruction is conditional on the CARRY flag
 CARRY:      MOV     A,C ; Get flag bits
             ANI     01h ; Test CARRY flag
             JMP     ENFLG ; And proceed
-                    ; This instruction is conditional on the SIGN flag
+; This instruction is conditional on the SIGN flag
 SIGN:       MOV     A,C ; Get flag bits
             ANI     80h ; Test SIGN flag
             JMP     ENFLG ; And proceed
-                    ; This instruction is conditional on the ZERO flag
+; This instruction is conditional on the ZERO flag
 ZERO:       MOV     A,C ; Get flag bits
             ANI     40h ; Test ZERO flag
             JMP     ENFLG ; And proceed
-                    ; This instruction is conditional on the PARITY flag
+; This instruction is conditional on the PARITY flag
 PARITY:     MOV     A,C ; Get flag bits
             ANI     04h ; Test PARITY flag
-                    ; Execute conditional instruction
+; Execute conditional instruction
 ENFLG:      JZ      NOTRC ; Not executed
             MOV     A,B ; Get type back
             ANI     04h ; Is it JUMP
             JNZ     CALRET ; No, try next
-                    ; Simulate a JUMP instruction
+; Simulate a JUMP instruction
 GOJMP:      LDA     INST ; Get instruction
             CPI     0CDh ; Is it a CALL
             JZ      PADR ; Yes
             ANI     0C7h ; Mask conditional
             CPI     0C4h ; Conditional call?
             JNZ     NOPSH ; No, its a jump
-                    ; Simulate a subroutine trace
+; Simulate a subroutine trace
 PADR:       LDA     SFLAG ; Get subroutine tracing flag
             ANA     A ; Is it set?
             JZ      NOTRC ; No, simulate as one instruction
             LHLD    BUFFER ; Get termination address
             DCX     H ; Backup
-            XCHG    ; D = address
+            XCHG     ; D = address
             LHLD    SP ; Get user SP
             DCX     H ; Backup
             MOV     M,D ; Set HIGH return address
             DCX     H ; Backup
             MOV     M,E ; Set LOW return address
             SHLD    SP ; Resave user SP
-                    ; Continue simulation of a JUMP type instruction
+; Continue simulation of a JUMP type instruction
 NOPSH:      LHLD    INST+1 ; Get target address
             JMP     HLJMP ; And proceed
-                    ; Handle simulation of RETURN instruction
+; Handle simulation of RETURN instruction
 CALRET:     LHLD    SP ; Get sser SP
             MOV     E,M ; Get LOW return address
             INX     H ; Advance
             MOV     D,M ; Get HIGH return address
             INX     H ; Advance
             SHLD    SP ; Resave user SP
-            XCHG    ; Set HL = address
-                    ; Simulate a jump to the address in HL
+            XCHG     ; Set HL = address
+; Simulate a jump to the address in HL
 HLJMP:      INX     H ; Advance
             SHLD    BUFFER ; Save new target address
             SUB     A ; Get NOP
@@ -577,8 +580,8 @@ HLJMP:      INX     H ; Advance
             MOV     L,A ; Set LOW
             STA     INST ; NOP first byte
             SHLD    INST+1 ; NOP second byte
-                    ; Dispatch the user program
-                    ; First, insert any breakpoints into the object code
+; Dispatch the user program
+; First, insert any breakpoints into the object code
 NOTRC:      LXI     D,BRKTAB ; Point to breakpoint table
             MVI     C,8 ; Size of table (in entries)
 RESBP:      LDAX    D ; Get a HIGH address
@@ -593,9 +596,9 @@ RESBP:      LDAX    D ; Get a HIGH address
 NORES:      INX     D ; Skip opcode
             DCR     C ; Reduce count
             JNZ     RESBP ; Do them all
-                    ; Restore the user applications registers
+; Restore the user applications registers
             LHLD    SP ; Get stack pointer
-            SPHL    ; Set stack pointer
+            SPHL     ; Set stack pointer
             LHLD    BC ; Get BC
             PUSH    H ; Save
             POP     B ; And set
@@ -603,30 +606,30 @@ NORES:      INX     D ; Skip opcode
             PUSH    H ; Save
             POP     PSW ; And set
             LHLD    DE ; Get DE
-            XCHG    ; Set DE
+            XCHG     ; Set DE
             LHLD    HL ; Get HL
             JMP     INST ; Execute "faked" instruction
-                    ; Trace routine: simulate a breakpoint interrupt
+; Trace routine: simulate a breakpoint interrupt
 FAKE:       PUSH    H ; Save HL on stack
             LHLD    BUFFER ; Get address to execute
-            XTHL    ; Restore HL, [SP] = address
+            XTHL     ; Restore HL, [SP] = address
             JMP     ENTRY ; Display the registers
-                    ; 
-                    ; Display/Change registers
-                    ; 
+; 
+; Display/Change registers
+; 
 REGIST:     JNZ     CHG1 ; Register name to change is given
-                    ; Display registers
+; Display registers
             CALL    REGDIS ; Display registers
             JMP     REST ; And exit
-                    ; Set register value
+; Set register value
 CHG1:       MOV     B,A ; Save first register name char
             CALL    GETCHI ; Get char (in upper case)
             MOV     C,A ; Save for later
             JZ      OKCH ; End of string
-                    ; Drop extra characters incase 'PSW'
+; Drop extra characters incase 'PSW'
 CHG2:       CALL    GETCHR ; Get next
             JNZ     CHG2 ; Clean them out
-                    ; Get new value for register
+; Get new value for register
 OKCH:       CALL    CALC ; Get new value
             MOV     A,B ; Get first char
             CPI     'H' ; Is it HL pair
@@ -656,7 +659,7 @@ CPC:        CPI     'C' ; Is it PC?
             JNZ     ERROR ; No, error
             SHLD    PC ; Set new PC
             JMP     REST ; And proceed
-                    ; Process an ON/OFF operand
+; Process an ON/OFF operand
 ONOFF:      CALL    SKIP ; Get next char
             CPI     'O' ; Must begin with ON
             JNZ     ERROR ; Invalid
@@ -668,28 +671,28 @@ ONOFF:      CALL    SKIP ; Get next char
             JNZ     ERROR ; No, error
             DCR     B ; Convert to FF
 RETON:      MOV     A,B ; Save new value
-            RET     
-                    ; 
-                    ; Turn automatic register display ON or OFF
-                    ; 
+            RET      
+; 
+; Turn automatic register display ON or OFF
+; 
 AUTO:       CALL    ONOFF ; Get ON/OFF value
             STA     AFLAG ; Set AUTOREG flag
             JMP     REST ; And proceed
-                    ; 
-                    ; Turn SUBROUTINE tracing ON or OFF
-                    ; 
+; 
+; Turn SUBROUTINE tracing ON or OFF
+; 
 SUBON:      CALL    ONOFF ; Get ON/OFF value
             STA     SFLAG ; Set SUBTRACE flag
             JMP     REST ; And proceed
-                    ; 
-                    ; Set TRACE mode ON or OFF
-                    ; 
+; 
+; Set TRACE mode ON or OFF
+; 
 TRACE:      CALL    ONOFF ; Get ON/OFF value
             STA     TFLAG ; Set TRACE flag
             JMP     REST ; And proceed
-                    ; 
-                    ; Edit memory contents
-                    ; 
+; 
+; Edit memory contents
+; 
 EDIT:       CALL    CALC ; Get address
 EDIT1:      CALL    HLOUT ; Display address
             CALL    SPACE ; Separator
@@ -709,7 +712,7 @@ EDIT1:      CALL    HLOUT ; Display address
             INX     H ; Fix mistake
             CPI     27h ; Single quote?
             JNZ     EDIT3 ; No, try hex value
-                    ; Handle quoted ASCII text
+; Handle quoted ASCII text
             INX     D ; Skip the quote
 EDIT2:      LDAX    D ; Get char
             INX     D ; Advance input
@@ -718,7 +721,7 @@ EDIT2:      LDAX    D ; Get char
             MOV     M,A ; Save it
             INX     H ; Advance output
             JMP     EDIT2 ; And proceed
-                    ; Handle HEXIDECIMAL values
+; Handle HEXIDECIMAL values
 EDIT3:      PUSH    H ; Save address
             CALL    CALC8 ; Get HEX value
             POP     H ; HL = address
@@ -727,9 +730,9 @@ EDIT3:      PUSH    H ; Save address
             CALL    SKIP ; More operands?
             JNZ     EDIT3 ; Get then all
             JMP     EDIT1 ; And continue
-                    ; 
-                    ; FIll memory with a value
-                    ; 
+; 
+; FIll memory with a value
+; 
 FILL:       CALL    CALC ; Get starting address
             PUSH    H ; Save for later
             CALL    CALC ; Get ending address
@@ -746,18 +749,18 @@ FILL1:      MOV     M,C ; Save one byte
             CALL    COMP16 ; Test for match
             JC      FILL1 ; And proceed
             JMP     REST ; Back for next
-                    ; 
-                    ; 16 bit compare of HL to DE
-                    ; 
+; 
+; 16 bit compare of HL to DE
+; 
 COMP16:     MOV     A,H ; Get HIGH
             CMP     D ; Match?
-            RNZ     ; No, we are done
+            RNZ      ; No, we are done
             MOV     A,L ; Get LOW
             CMP     E ; Match?
-            RET     
-                    ; 
-                    ; Copy a block of memory
-                    ; 
+            RET      
+; 
+; Copy a block of memory
+; 
 COPY:       CALL    CALC ; Get SOURCE address
             PUSH    H ; Save for later
             CALL    CALC ; Get DEST Address
@@ -772,7 +775,7 @@ COPY:       CALL    CALC ; Get SOURCE address
             JZ      REST ; Yes, exit
             CALL    COMP16 ; Compare source and destination address
             JC      COPY2 ; Dest > Source, jump
-                    ; Source > Dest
+; Source > Dest
 COPY1:      MOV     A,M ; Get byte from source
             STAX    D ; Write to dest
             INX     H ; Advance source
@@ -782,10 +785,10 @@ COPY1:      MOV     A,M ; Get byte from source
             ORA     B 
             JNZ     COPY1 ; No, continue
             JMP     REST 
-                    ; Dest > Source
+; Dest > Source
 COPY2:      DAD     B ; Move source and destination address to end
             DCX     H ; of block
-            XCHG    
+            XCHG     
             DAD     B 
             DCX     H 
 COPY3:      LDAX    D ; Get byte from source
@@ -797,9 +800,9 @@ COPY3:      LDAX    D ; Get byte from source
             ORA     B 
             JNZ     COPY3 ; No, continue
             JMP     REST 
-                    ; 
-                    ; Display a block of memory
-                    ; 
+; 
+; Display a block of memory
+; 
 MEMRY:      CALL    CALC ; Get operand
             SUB     A ; Get a ZERO
             STA     OFLAG ; Clear output flag
@@ -832,9 +835,9 @@ AL3:        MOV     A,M ; Get data byte
             JNZ     AL3 ; Do them all
             CALL    CHKSUS ; Handle output suspension
             JMP     ALOOP ; And continue
-                    ; 
-                    ; Perform disassembly to console
-                    ; 
+; 
+; Perform disassembly to console
+; 
 GODIS:      CALL    CALC ; Get starting address
             PUSH    H ; Save address
             POP     D ; Copy to D
@@ -843,9 +846,9 @@ GODIS:      CALL    CALC ; Get starting address
 VLOOP:      CALL    DINST ; Display one instruction
             CALL    CHKSUS ; Handle output
             JMP     VLOOP ; And proceed
-                    ; 
-                    ; Set/display user base address
-                    ; 
+; 
+; Set/display user base address
+; 
 USRBASE:    JNZ     USRB1 ; Address is given, set it
             CALL    PRTMSG ; Output message
             DB      "BASE=",0 
@@ -855,9 +858,9 @@ USRBASE:    JNZ     USRB1 ; Address is given, set it
 USRB1:      CALL    CALC ; Get operand
             SHLD    UBASE ; Set the address
             JMP     REST ; and return
-                    ; 
-                    ; Send out as Intel HEX
-                    ; 
+; 
+; Send out as Intel HEX
+; 
 SNDHEX:     CALL    CALC ; Get start address
             PUSH    H ; Save for later
             CALL    CALC ; Get end address
@@ -871,7 +874,7 @@ SNDHEX:     CALL    CALC ; Get start address
             MOV     A,H 
             SBB     D 
             MOV     H,A 
-            XCHG    ; HL = start, DE = length
+            XCHG     ; HL = start, DE = length
 SNDHX1:     MOV     A,D ; Finish ?
             ORA     E 
             JZ      SNDHX3 ; Yes, jump
@@ -885,11 +888,11 @@ SNDHX1:     MOV     A,D ; Finish ?
             MOV     B,E ; Yes, B=rest
 SNDHX2:     CALL    SHXRC ; Send out one record
             JMP     SNDHX1 ; continue
-                    ; 
+; 
 SNDHX3:     CALL    PRTMSG 
             DB      ":00000001FF",0Dh,0Ah,0 
             JMP     REST 
-                    ; 
+; 
 SHXRC:      MVI     A,':' ; Start record
             CALL    OUT 
             MOV     A,B ; Length
@@ -917,32 +920,32 @@ SHXRC1:     MOV     A,M ; One byte
             DCR     B ; Decrement bytes per record counter
             JNZ     SHXRC1 
             MOV     A,C ; Negate checksum
-            CMA     
+            CMA      
             INR     A 
             CALL    HPR ; Output in hex
             JMP     CRLF 
-                    ; 
-                    ; Download command
-                    ; 
+; 
+; Download command
+; 
 LOAD:       MVI     A,0Fh ; Get default initial state
             JZ      LOAD1 ; Address not given...
             CALL    CALC ; Get operand value
             SHLD    BUFFER+3 ; Save for later calulation
             MVI     A,0FFh ; Set new initial state
-                    ; Setup the offset calculator
+; Setup the offset calculator
 LOAD1:      LXI     H,0 ; Assume no offset
             STA     BUFFER ; Set mode flag
             SHLD    BUFFER+1 ; Assume offset is ZERO
-                    ; Download the records
+; Download the records
 LOAD2:      CALL    DLREC ; Get a record
             JNZ     DLBAD ; Report error
             JNC     LOAD2 ; Get them all
             JMP     DLWAIT ; And back to monitor
-                    ; Error in receiving download record
+; Error in receiving download record
 DLBAD:      CALL    PRTMSG ; Output message
             DB      "?Load error" 
             DB      0Dh,0Ah,0 
-                    ; Wait till incoming data stream stops
+; Wait till incoming data stream stops
 DLWAIT:     MVI     C,0 ; Initial count
 DLWAIT1:    CALL    IN ; Test for input
             ANA     A ; Any data
@@ -950,15 +953,15 @@ DLWAIT1:    CALL    IN ; Test for input
             DCR     C ; Reduce counter
             JNZ     DLWAIT1 ; Keep looking
             JMP     REST ; Back to monitor
-                    ; 
-                    ; Download a record from the serial port
-                    ; 
+; 
+; Download a record from the serial port
+; 
 DLREC:      CALL    INCHR ; Read a character
             CPI     ':' ; Start of record?
             JZ      DLINT ; Download INTEL format
             CPI     'S' ; Is it MOTOROLA?
             JNZ     DLREC ; No, keep looking
-                    ; Download a MOTOROLA HEX format record
+; Download a MOTOROLA HEX format record
 DLMOT:      CALL    INCHR ; Get next character
             CPI     '0' ; Header record?
             JZ      DLREC ; Yes, skip it
@@ -990,8 +993,8 @@ DMOT1:      CALL    GETBYT ; Get a byte of data
             ADD     C ; Include calculated checksum
             INR     A ; Adjust for test
             ANA     A ; Clear carry set Z
-            RET     
-                    ; Download a record in INTEL hex format
+            RET      
+; Download a record in INTEL hex format
 DLINT:      CALL    GETBYT ; Get length
             ANA     A ; End of file?
             JZ      DLEOF ; Yes, handle it
@@ -1019,28 +1022,28 @@ DLINT1:     CALL    GETBYT ; Get data byte
             CALL    GETBYT ; Get record checksum
             ADD     C ; Add to computed checksum
             ANA     A ; Clear carry, set Z
-            RET     
-                    ; End of file on download
-DLEOF:      STC     ; Set carry, EOF
-            RET     
-                    ; 
-                    ; Process record offsets for download records
-                    ; 
+            RET      
+; End of file on download
+DLEOF:      STC      ; Set carry, EOF
+            RET      
+; 
+; Process record offsets for download records
+; 
 SETOFF:     LDA     BUFFER ; Get flag
             ANA     A ; Test flag
             JNZ     SETOF1 ; Special case
-                    ; Not first record, adjust for offset & proceed
-            XCHG    ; DE = address
+; Not first record, adjust for offset & proceed
+            XCHG     ; DE = address
             LHLD    BUFFER+1 ; Get offset
             DAD     D ; HL = address + offset
-            RET     
-                    ; First record, set USER BASE & calculate offset (if any)
+            RET      
+; First record, set USER BASE & calculate offset (if any)
 SETOF1:     MVI     A,0 ; Get zero (NO CC)
             STA     BUFFER ; Clear flag
             SHLD    UBASE ; Set user program base
-            RP      ; No more action
-                    ; Calculate record offset to RAM area
-            XCHG    ; DE = address
+            RP       ; No more action
+; Calculate record offset to RAM area
+            XCHG     ; DE = address
             LHLD    BUFFER+3 ; Get operand
             MOV     A,L ; Subtract
             SUB     E ; Record
@@ -1050,38 +1053,38 @@ SETOF1:     MVI     A,0 ; Get zero (NO CC)
             MOV     H,A ; Offset
             SHLD    BUFFER+1 ; Set new offset
             DAD     D ; Get address
-            RET     
-                    ; 
-                    ; Gets a byte of HEX data from serial port.
-                    ; 
+            RET      
+; 
+; Gets a byte of HEX data from serial port.
+; 
 GETBYT:     CALL    GETNIB ; Get first nibble
-            RLC     ; Shift into
-            RLC     ; Upper nibble
-            RLC     ; Of result
-            RLC     ; To make room for lower
+            RLC      ; Shift into
+            RLC      ; Upper nibble
+            RLC      ; Of result
+            RLC      ; To make room for lower
             MOV     E,A ; Keep high digit
             CALL    GETNIB ; Get second digit
             ORA     E ; Insert high digit
-            RET     
-                    ; GETS A NIBBLE FROM THE TERMINAL (IN ASCII HEX)
+            RET      
+; GETS A NIBBLE FROM THE TERMINAL (IN ASCII HEX)
 GETNIB:     CALL    INCHR ; Get a character
             SUI     '0' ; Is it < '0'?
             JC      GETN1 ; Yes, invalid
             CPI     10 ; 0-9?
-            RC      ; Yes, its OK
+            RC       ; Yes, its OK
             SUI     7 ; Convert
             CPI     10 ; 9-A?
             JC      GETN1 ; Yes, invalid
             CPI     16 ; A-F?
-            RC      ; Yes, its OK
+            RC       ; Yes, its OK
 GETN1:      POP     D ; Remove GETNIB RET addr
             POP     D ; Remove GETBYT RET addr
-                    ; Error during download record
+; Error during download record
 DLERR:      ORI     0FFh ; Error indicator
-            RET     
-                    ; 
-                    ; Read an input line from the console
-                    ; 
+            RET      
+; 
+; Read an input line from the console
+; 
 INPT:       LXI     H,BUFFER ; Point to input buffer
 INPT1:      CALL    INCHR ; Get a char
             CPI     1Bh ; ESCAPE?
@@ -1089,12 +1092,12 @@ INPT1:      CALL    INCHR ; Get a char
             CPI     0Dh ; Carriage return?
             JZ      INPT4 ; Yes, exit
             MOV     D,A ; Save for later
-                    ; Test for DELETE function
+; Test for DELETE function
             CPI     7Fh ; Is it delete?
             JZ      INPT3 ; Yes, it is
             CPI     08h ; Backspace?
             JZ      INPT3 ; Yes, it is
-                    ; Insert character in buffer
+; Insert character in buffer
             MOV     A,L ; Get low address
             CPI     (BUFFER&255)+30 ; Beyond end?
             MVI     A,7 ; Assume error
@@ -1104,7 +1107,7 @@ INPT1:      CALL    INCHR ; Get a char
             INX     H ; Advance
 INPT2:      CALL    OUT ; Echo it
             JMP     INPT1 ; And proceed
-                    ; Delete last character from buffer
+; Delete last character from buffer
 INPT3:      MOV     A,L ; Get char
             CPI     BUFFER&255 ; At begining
             MVI     A,7 ; Assume error
@@ -1115,47 +1118,47 @@ INPT3:      MOV     A,L ; Get char
             POP     H ; Restore H
             DCX     H ; Backup
             JMP     INPT1 ; And proceed
-                    ; Terminate the command
+; Terminate the command
 INPT4:      MVI     M,0 ; Zero terminate
             CALL    CRLF ; New line
             LXI     D,BUFFER ; Point to input buffer
-                    ; Advance to next non-blank in buffer
+; Advance to next non-blank in buffer
 SKIP:       LDAX    D ; Get char from buffer
             INX     D ; Advance
             CPI     ' ' ; Space?
             JZ      SKIP ; Yes, keep looking
             DCX     D ; Backup to it
             JMP     TOCAP ; And convert to upper
-                    ; 
-                    ; Read next character from command & convert to upper case
-                    ; 
+; 
+; Read next character from command & convert to upper case
+; 
 GETCHI:     INX     D ; Skip next character
 GETCHR:     LDAX    D ; Get char from command line
             ANA     A ; End of line?
-            RZ      ; Yes, return with it
+            RZ       ; Yes, return with it
             INX     D ; Advance command pointer
-                    ; 
-                    ; Convert character in A to uppercase, set Z if SPACE or EOL
-                    ; 
+; 
+; Convert character in A to uppercase, set Z if SPACE or EOL
+; 
 TOCAP:      CPI     61h ; Lower case?
             JC      TOCAP1 ; Yes, its ok
             ANI     5Fh ; Convert to UPPER
 TOCAP1:     CPI     ' ' ; Space
-            RZ      ; Yes, indicate
+            RZ       ; Yes, indicate
             ANA     A ; Set 'Z' if EOL
-            RET     
-                    ; 
-                    ; Get 8 bit HEX operands to command
-                    ; 
+            RET      
+; 
+; Get 8 bit HEX operands to command
+; 
 CALC8:      CALL    CALC ; Get operand
             MOV     A,H ; High byte must be zero
             ORA     A 
             JNZ     ERROR ; Bad value
             MOV     A,L ; Value also to A
-            RET     
-                    ; 
-                    ; Get 16 bit HEX operands to command
-                    ; 
+            RET      
+; 
+; Get 16 bit HEX operands to command
+; 
 CALC:       PUSH    B ; Save B-C
             CALL    SKIP ; Find start of operand
             LXI     H,0 ; Begin with zero value
@@ -1176,26 +1179,26 @@ CALC2:      ORA     L ; Include in final value
             MOV     L,A ; Resave low bute
             MVI     C,0FFh ; Set flag & indicate we have char
             JMP     CALC1 ; And continue
-                    ; End of input string was found
+; End of input string was found
 CALC3:      MOV     A,C ; Get flag
             POP     B ; Restore B-C
             ANA     A ; Was there any digits?
             JZ      ERROR ; No, invalid
-            RET     
-                    ; Test for character in A as valid hex
+            RET      
+; Test for character in A as valid hex
 VALHEX:     CPI     '0' ; < '0'
-            RC      ; Too low
+            RC       ; Too low
             CPI     'G' ; >'F'
-            CMC     ; Set C state
-            RC      ; Too high
+            CMC      ; Set C state
+            RC       ; Too high
             CPI     3Ah ; <='9'
-            CMC     ; Set C state
-            RNC     ; Yes, its OK
+            CMC      ; Set C state
+            RNC      ; Yes, its OK
             CPI     'A' ; Set C if < 'A'
-            RET     
-                    ; 
-                    ; Display the user process registers
-                    ; 
+            RET      
+; 
+; Display the user process registers
+; 
 REGDIS:     LHLD    BC ; Get saved BC pair
             LXI     B,'BC' ; And register names
             CALL    OUTPT ; Output
@@ -1235,7 +1238,7 @@ REGDIS:     LHLD    BC ; Get saved BC pair
             MVI     B,'C' ; 'C' flag
             CALL    OUTB ; Display
             JMP     CRLF ; New line & exit
-                    ; Display contents of a register pair
+; Display contents of a register pair
 OUTPT:      MOV     A,B ; Get first char of name
             CALL    OUT ; Output
             MOV     A,C ; Get second char of name
@@ -1244,18 +1247,18 @@ OUTPT:      MOV     A,B ; Get first char of name
             CALL    OUT ; Output
 HLOUT2:     CALL    HLOUT ; Output value
             CALL    SPACE ; Output a space
-                    ; Display a space on the console
+; Display a space on the console
 SPACE:      MVI     A,' ' ; Get a spave
             JMP     OUT ; Display it
-                    ; Display an individual flag bit B=title, H[7]=bit
+; Display an individual flag bit B=title, H[7]=bit
 OUTB:       DAD     H ; Shift H[7] into carry
             MVI     A,'-' ; Dash for not set flag
             JNC     OUT ; Display dash
             MOV     A,B ; Get character
             JMP     OUT ; And display
-                    ; 
-                    ; Display an instruction in disassembly format
-                    ; 
+; 
+; Display an instruction in disassembly format
+; 
 DINST:      PUSH    D ; Save address
             MOV     A,D ; Get high value
             CALL    HPR ; Output
@@ -1269,7 +1272,7 @@ DINST:      PUSH    D ; Save address
             MVI     B,4 ; 4 spaces total
             MOV     C,A ; Save count
             DCX     D ; Backup address
-                    ; Display the opcode bytes in HEX
+; Display the opcode bytes in HEX
 VLP1:       INX     D ; Advance
             LDAX    D ; Get opcode
             CALL    HPR ; Output in HEX
@@ -1277,13 +1280,13 @@ VLP1:       INX     D ; Advance
             DCR     B ; Reduce count
             DCR     C ; Reduce count of opcodes
             JNZ     VLP1 ; Do them all
-                    ; Fill in to boundary
+; Fill in to boundary
 VLP2:       CALL    SPACE ; Space over
             CALL    SPACE ; Space over
             CALL    SPACE ; Spave over
             DCR     B ; Reduce count
             JNZ     VLP2 ; Do them all
-                    ; DISPLAY ASCII equivalent of opcodes
+; DISPLAY ASCII equivalent of opcodes
             POP     B ; Restore table address
             POP     PSW ; Restore type/length
             POP     D ; Restore instruction address
@@ -1298,7 +1301,7 @@ PCHR:       LDAX    D ; Get byte from opcode
             DCR     H ; Reduce field count
             DCR     L ; Reduce opcode count
             JNZ     PCHR ; Do them all
-                    ; Space over to instruction address
+; Space over to instruction address
 SPLP:       CALL    SPACE ; Output a space
             DCR     H ; Reduce count
             JNZ     SPLP ; Do them all
@@ -1311,17 +1314,17 @@ VLP3:       LDAX    B ; Get char from table
             DCR     D ; reduce count
             CPI     ' ' ; end of name?
             JNZ     VLP3 ; no, keep going
-                    ; Fill in name field with spaces
+; Fill in name field with spaces
 VOUT:       DCR     D ; reduce count
             JZ      VLP3 ; Keep going
             CALL    SPACE ; Output a space
             JMP     VOUT ; And proceed
-                    ; Output operands for the instruction
+; Output operands for the instruction
 VOUT1:      POP     PSW ; Restore type
             POP     D ; Restore instruction address
             DCR     A ; Is it type1?
             JZ      T1 ; Yes, handle it
-                    ; Type 2 -  One byte immediate date
+; Type 2 -  One byte immediate date
 T2:         PUSH    PSW ; Save type
             MVI     A,'$' ; Get HEX indicator
             CALL    OUT ; Output
@@ -1331,10 +1334,10 @@ T2:         PUSH    PSW ; Save type
             INX     D ; Advance to data
             LDAX    D ; Get data
             CALL    HPR ; Output in HEX
-                    ; Type 1 - No operand
+; Type 1 - No operand
 T1:         INX     D 
-            RET     
-                    ; Type 3 - Two bytes immediate data
+            RET      
+; Type 3 - Two bytes immediate data
 T3:         INX     D ; Skip to low	
             INX     D ; Skip to high
             LDAX    D ; Get HIGH
@@ -1344,10 +1347,10 @@ T3:         INX     D ; Skip to low
             CALL    HPR ; Output
             INX     D ; Advance to high
             INX     D 
-            RET     
-                    ; 
-                    ; Look up instruction in table & return TYPE/LENGTH[A], and string[HL]
-                    ; 
+            RET      
+; 
+; Look up instruction in table & return TYPE/LENGTH[A], and string[HL]
+; 
 LOOK:       PUSH    D ; Save DE
             LDAX    D ; Get opcode
             MOV     B,A ; Save for later
@@ -1358,57 +1361,57 @@ LOOK1:      MOV     A,B ; Get Opcode
             CMP     M ; Does it match
             INX     H ; Skip opcode
             JZ      LOOK3 ; Yes, we found it
-                    ; This wasn't it, advance to the next
+; This wasn't it, advance to the next
 LOOK2:      MOV     A,M ; Get byte
             INX     H ; Advance to next
             ANA     A ; End of string?
             JNZ     LOOK2 ; No, keep looking
             JMP     LOOK1 ; And continue
-                    ; We found the instruction, copy over the text description
+; We found the instruction, copy over the text description
 LOOK3:      MOV     C,M ; Save type
             INX     H ; Skip type
             LXI     D,BUFFER ; Point to text buffer
 LOOK4:      MOV     A,M ; Get char from source
             INX     H ; Advance to next
-                    ; Insert a RESTART vector number
+; Insert a RESTART vector number
             CPI     'v' ; Restart vector
             JNZ     LOOK5 ; No, its OK
             MOV     A,B ; Get opcode
-            RRC     ; Shift it
-            RRC     ; Over
-            RRC     ; To low digit
+            RRC      ; Shift it
+            RRC      ; Over
+            RRC      ; To low digit
             ANI     07h ; Remove trash
             ADI     '0' ; Convert to digit
             JMP     LOOK10 ; And set the character
-                    ; Insert a register pair name
+; Insert a register pair name
 LOOK5:      CPI     'p' ; Register PAIR?
             JNZ     LOOK6 ; No, try next
             MOV     A,B ; Get opcode
-            RRC     ; Shift
-            RRC     ; Over into
-            RRC     ; Low digit
-            RRC     ; For lookup
+            RRC      ; Shift
+            RRC      ; Over into
+            RRC      ; Low digit
+            RRC      ; For lookup
             ANI     03h ; Save only RP
             PUSH    H ; Save HL
             LXI     H,RPTAB ; Point to pair table
             JMP     LOOK9 ; And proceed
-                    ; Insert destination register name
+; Insert destination register name
 LOOK6:      CPI     'd' ; Set destination?
             JNZ     LOOK7 ; No, try next
             MOV     A,B ; Get opcode
-            RRC     ; Shift
-            RRC     ; Into low
-            RRC     ; digit
+            RRC      ; Shift
+            RRC      ; Into low
+            RRC      ; digit
             JMP     LOOK8 ; And proceed
-                    ; Insert source register name
+; Insert source register name
 LOOK7:      CPI     's' ; Source register?
             JNZ     LOOK10 ; No, its OK
             MOV     A,B ; Get opcode
-                    ; Lookup a general processor register
+; Lookup a general processor register
 LOOK8:      ANI     07h ; Save only source
             PUSH    H ; Save HL
             LXI     H,RTAB ; Point to table
-                    ; Lookup register in table
+; Lookup register in table
 LOOK9:      ADD     L ; Offset to value
             MOV     L,A ; Resave address
             MOV     A,M ; Get character
@@ -1418,19 +1421,19 @@ LOOK9:      ADD     L ; Offset to value
             INX     D ; Advance to next
             MVI     A,'P' ; Character 'P'
 LOOK9A:     POP     H ; Restore HL
-                    ; Save character in destination string
+; Save character in destination string
 LOOK10:     STAX    D ; Save value
             INX     D ; Advance to next
             ANA     A ; End of list?
             JNZ     LOOK4 ; No, keep copying
-                    ; End of LIST
+; End of LIST
             LXI     H,BUFFER ; Point to description
             MOV     A,C ; Get length
             POP     D ; Restore DE
-            RET     
-                    ; 
-                    ; Opcode disassembly table: MASK, OPCODE, TYPE/LENGTH, STRINGZ
-                    ; 
+            RET      
+; 
+; Opcode disassembly table: MASK, OPCODE, TYPE/LENGTH, STRINGZ
+; 
 ITABLE:     DB      0FFh,0FEh,02h 
             DB      "CPI ",0 
             DB      0FFh,3Ah,03h 
@@ -1495,12 +1498,12 @@ ITABLE:     DB      0FFh,0FEh,02h
             DB      "XRI ",0 
             DB      0FFh,00h,01h 
             DB      "NOP",0 
-                    ; 8085 specific instructions
+; 8085 specific instructions
             DB      0FFh,20h,01h 
             DB      "RIM",0 
             DB      0FFh,30h,01h 
             DB      "SIM",0 
-                    ; 8085 undocumented instructions
+; 8085 undocumented instructions
             DB      0FFh,08h,01h 
             DB      "DSUB B",0 
             DB      0FFh,10h,01h 
@@ -1521,7 +1524,7 @@ ITABLE:     DB      0FFh,0FEh,02h
             DB      "LHLX D",0 
             DB      0FFh,0FDh,03h 
             DB      "JK ",0 
-                    ; Jumps, Calls & Returns
+; Jumps, Calls & Returns
             DB      0FFh,0C3h,0Bh 
             DB      "JMP ",0 
             DB      0FFh,0CAh,43h 
@@ -1576,7 +1579,7 @@ ITABLE:     DB      0FFh,0FEh,02h
             DB      "RM",0 
             DB      0FFh,0F0h,8Dh 
             DB      "RP",0 
-                    ; Register based instructions
+; Register based instructions
             DB      0C0h,40h,01h 
             DB      "MOV d,s",0 
             DB      0C7h,06h,02h 
@@ -1601,7 +1604,7 @@ ITABLE:     DB      0FFh,0FEh,02h
             DB      "INR d",0 
             DB      0C7h,05h,01h 
             DB      "DCR d",0 
-                    ; Register pair instructions
+; Register pair instructions
             DB      0CFh,01h,03h 
             DB      "LXI p,",0 
             DB      0EFh,0Ah,01h 
@@ -1618,13 +1621,13 @@ ITABLE:     DB      0FFh,0FEh,02h
             DB      "PUSH p",0 
             DB      0CFh,0C1h,01h 
             DB      "POP p",0 
-                    ; Restart instruction
+; Restart instruction
             DB      0C7h,0C7h,01h 
             DB      "RST v",0 
-                    ; This entry always matches invalid opcodes
+; This entry always matches invalid opcodes
             DB      00h,00h,01h 
             DB      "DB ",0 
-                    ; Misc Strings and messages
+; Misc Strings and messages
 ON:         DB      "ON ",0 
 OFF:        DB      "OFF",0 
 AUTMSG:     DB      "AUTOREG=",0 
@@ -1649,52 +1652,52 @@ HTEXT:      DB      "MON85 Commands:"
             DB      "T ON|OFF!Enable/Disable Trace mode",0 
             DB      "U [address]!Set/Display program base address",0 
             DB      0 
-                    ; 
-                    ; Read a character, and wait for it
-                    ; 
+; 
+; Read a character, and wait for it
+; 
 INCHR:      CALL    IN ; Check for a character
             ANA     A ; Is there any data?
             JZ      INCHR ; Wait for it
-            RET     
-                    ; 
-                    ; Display HL in hexidecimal
-                    ; 
+            RET      
+; 
+; Display HL in hexidecimal
+; 
 HLOUT:      MOV     A,H ; Get HIGH byte
             CALL    HPR ; Output
             MOV     A,L ; Get LOW byte
-                    ; 
-                    ; Display A in hexidecimal
-                    ; 
+; 
+; Display A in hexidecimal
+; 
 HPR:        PUSH    PSW ; Save low digit
-            RRC     ; Shift
-            RRC     ; high
-            RRC     ; digit
-            RRC     ; into low
+            RRC      ; Shift
+            RRC      ; high
+            RRC      ; digit
+            RRC      ; into low
             CALL    HOUT ; Display a single digit
             POP     PSW ; Restore low digit
 HOUT:       ANI     0Fh ; Remove high digit
             CPI     10 ; Convert to ASCII
             SBI     2Fh 
-            DAA     
+            DAA      
             JMP     OUT ; And output it
-                    ; 
-                    ; Display message [PC]
-                    ; 
+; 
+; Display message [PC]
+; 
 PRTMSG:     POP     H ; Get address
             CALL    PRTSTR ; Output message
-            PCHL    ; And return
-                    ; 
-                    ; Display message [HL]
-                    ; 
+            PCHL     ; And return
+; 
+; Display message [HL]
+; 
 PRTSTR:     MOV     A,M ; Get byte from message
             INX     H ; Advance to next
             ANA     A ; End of message?
-            RZ      ; Yes, exit
+            RZ       ; Yes, exit
             CALL    OUT ; Output the character
             JMP     PRTSTR ; And proceed
-                    ; 
-                    ; Handle output suspension
-                    ; 
+; 
+; Handle output suspension
+; 
 CHKSUS:     CALL    CRLF ; New line
             LDA     OFLAG ; Is output suspended?
             ANA     A ; Test flag
@@ -1703,29 +1706,29 @@ CHKSUS:     CALL    CRLF ; New line
             CPI     1Bh ; ESCAPE?
             JZ      REST ; Abort
             CPI     ' ' ; SPACE - Suspend command
-            RNZ     
+            RNZ      
             STA     OFLAG ; Set the flag
-                    ; Output is suspended, wait for command
+; Output is suspended, wait for command
 CHKS1:      CALL    INCHR ; Get char
             CPI     ' ' ; One line?
-            RZ      ; Allow it
+            RZ       ; Allow it
             CPI     1Bh ; ESCAPE?
             JZ      REST ; Abort
             CPI     0Dh ; Resume?
             JNZ     CHKS1 ; Keep going
             SUB     A ; Reset flag
             STA     OFLAG ; Write it
-            RET     
-                    ; Display a character if its printable
+            RET      
+; Display a character if its printable
 OUTP:       CPI     ' ' ; < ' '
             JC      OUTP1 ; Invalid, exchange it
             CPI     7Fh ; Printable?
             JC      OUT ; Ok to display
 OUTP1:      MVI     A,'.' ; Set to DOT to indicate invalid
             JMP     OUT ; And display
-                    ; 
-                    ; Write a Line-Feed and Carriage-Return to console
-                    ; 
+; 
+; Write a Line-Feed and Carriage-Return to console
+; 
 CRLF:       MVI     A,0Dh ; Carriage return
             CALL    OUT ; Output
             MVI     A,0Ah ; Line-feed
@@ -1738,31 +1741,48 @@ ACIAD       EQU     ACIA+1
 ACIA_TDRE   EQU     02h 
 ACIA_RDRF   EQU     01h 
 
-                    ; 
-                    ; User supplied I/O routines.
-                    ; OMEN Alpha fix for 6850 ACIA
-                    ;-----------------------------------------------------------
-                    ; NOTE: "OUT" must appear first because "CRLF" falls into it.
-                    ; 
-                    ; Write character in A to console (6850 acia)
+; 
+; User supplied I/O routines.
+; OMEN Alpha fix for 6850 ACIA
+;-----------------------------------------------------------
+; NOTE: "OUT" must appear first because "CRLF" falls into it.
+; 
+; Write character in A to console (6850 acia)
 OUT:        PUSH    PSW ; Save char
 OUT1:       IN      ACIAS ; Get 6850 status
+            PUSH    PSW 
+            ANI     ACIA_RDRF 
+            JZ      OUTGO 
+            STA     ACIAFX 
+            IN      ACIAD 
+            STA     ACIADX 
+OUTGO:      POP     PSW 
             ANI     ACIA_TDRE ; Test TX bit
             JZ      OUT1 ; Not ready
             POP     PSW ; Restore char
             OUT     ACIAD ; Write 6850 data
-            RET     
-                    ; Check for a character from the console (6850 acia)
-IN:         IN      ACIAS ; Get 6850 status
+            RET      
+; Check for a character from the console (6850 acia)
+IN:         LDA     ACIAFX 
+            ORA     A 
+            JZ      IN2 
+            XRA     A 
+            STA     ACIAFX 
+            LDA     ACIADX 
+            RET      
+IN2:        IN      ACIAS ; Get 6850 status
             ANI     ACIA_RDRF ; Test for ready
-            RZ      ; No char
+            RZ       ; No char
             IN      ACIAD ; Get 6850 data
-            RET     
-                    ; 
-                    ; Initialize the timer & uart
-                    ; 
-                    ; 6850 initialisation
+            RET      
+; 
+; Initialize the timer & uart
+; 
+; 6850 initialisation
 INIT:       MVI     A,15h ; 115200 Bd, 8 bit, no parity, 1 stop bit, no IRQ
             OUT     ACIAC 
-            RET     
+            XRA A
+            STA ACIAFX
+            RET      
+
 
