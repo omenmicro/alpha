@@ -420,35 +420,58 @@ CDUMPKEY:
 CHEXIN:             
             CALL    GET1BYTE 
             MOV     C,A 
+            mov e,a ;checksum
             CALL    GET2BYTEREV 
+            mov a,e
+            add h
+            add l
+            mov e,a
+            
                     ;type
             CALL    GET1BYTE 
             ORA     A 
-            JNZ     HEXLAST 
+            JNZ     HEXtype
+            add e
+            mov e,a
                     ;byte2byte
 
 HEXWRITER:          
             CALL    GET1BYTE 
             MOV     M,A 
+            add e
+            mov e,a
             INX     H 
             DCR     C 
             JNZ     HEXWRITER 
+            
+hexdone:            
+            mov a,h
+            call printhex
+            mov a,l
+            call printhex
+            CALL    GET1BYTE
+            add e
+            jz main
+            lxi h,hexerr
+            call strout
+            jmp main
+hextype: 
+    add e
+    mov e,a
+    jmp hexdone
+;
+;HEXCR:              
+            ;CALL    SERIN 
+            ;CPI     0Dh 
+            ;JZ     HEXend
+            ;cpi 0ah
+            ;jnz hexcr
+            
+;hexend:
+            ;MVI     A,"$" 
+            ;CALL    SEROUT 
+            ;JMP     MAIN 
 
-HEXCR:              
-            CALL    SERIN 
-            CPI     0Dh 
-            JNZ     HEXLAST 
-            MVI     A,"$" 
-            CALL    SEROUT 
-            JMP     MAIN 
-
-HEXLAST:            
-            CALL    SERIN 
-            CPI     0Dh 
-            JNZ     HEXLAST 
-            LXI     H,DONE 
-            CALL    STROUT 
-            JMP     MAIN 
 
 
 CBASIC:             
@@ -586,6 +609,8 @@ WHAT:
 
 ADDR:               
             .ISTR   'Addr:' 
+HEXERR:
+            .ISTR "Chk err"
 
 DONE:               
             .ISTR   'DONE',0Dh,0Ah 
