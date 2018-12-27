@@ -1,0 +1,50 @@
+; 28C256 EEPROM write
+; Page mode used (up to 64 bytes at once, all of them must be in one page)
+
+; Pages are:
+; 0000 - 003F
+; 0040 - 007F
+; ...
+; 7FC0 - 7FFF
+
+; EEPROM needs at least 150 us between bytes in one page
+; and at least 10 ms after the last byte of given page.
+
+; Do not forget switch the WREN to the ENABLE position!
+
+            .ORG    8000h 
+
+            LXI     h,7300h 
+            MVI     a,11h 
+            CALL    eewrite 
+            MVI     a,022h 
+            CALL    eewrite 
+            MVI     a,033h 
+            CALL    eewrite 
+            MVI     a,044h 
+            CALL    eewrite 
+            MVI     a,0AAh 
+            CALL    eewrite 
+            MVI     a,0EEh 
+            CALL    eewrite 
+
+;page write pause 10ms
+            LXI     d,1000 
+            CALL    dloop 
+            JMP     0 
+
+
+EEWRITE:             
+            MOV     m,a 
+            INX     h 
+;at least 150us pause
+            LXI     d,12 
+
+;delay
+DLOOP:               
+            DCX     D ;  6 T
+            MOV     A,D ;  4 T
+            ORA     E ;  4 T
+            JNZ     DLOOP ; 10 T / 7 T
+            RET      ; 10 T
+
