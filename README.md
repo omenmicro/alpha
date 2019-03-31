@@ -4,6 +4,10 @@ _Samozřejmě osmibitový a s tak historickým duchem, jak to jen jde._
 
 [![I sell on Tindie](https://d2ss6ovg47m0r5.cloudfront.net/badges/tindie-larges.png)](https://www.tindie.com/stores/parallaxis/?ref=offsite_badges&utm_source=sellers_parallaxis&utm_medium=badges&utm_campaign=badge_large)
 
+[Essential ICs on AliExpress](https://alitronik.com/omen-alpha-pack/)
+[Essential ICs on eBay](https://alitronik.com/omen-alpha-pack-ebay/)
+
+
 Když jsem přemýšlel o tom, jak pojmout svou další knihy, bylo mi jasné, že suchý výklad nebude stačit. Tedy, on by stačil, ale já nejsem zrovna příznivcem teoretických učebnic bez přesahu do praxe. Bylo tedy samozřejmé, že nějakou konstrukci chci.
 
 Ano, můžu vzít nějaký reálný osmibit a ukazovat na něm, jak se věci mají, možná vás i ponouknout ke stavbě repliky, ale touto cestou se mi moc jít nechtělo. Říkám si, že na vlastní konstrukci, která bude tak jednoduchá, jak jen to lze, půjde ilustrovat požadované věci mnohem líp.
