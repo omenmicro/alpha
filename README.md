@@ -1,6 +1,6 @@
 # OMEN Alpha - [[česky](README-CZ.md)]
 
-_Samozřejmě osmibitový a s tak historickým duchem, jak to jen jde._
+_8bit computer, based on 8085 CPU._
 
 [![I sell on Tindie](https://d2ss6ovg47m0r5.cloudfront.net/badges/tindie-larges.png)](https://www.tindie.com/stores/parallaxis/?ref=offsite_badges&utm_source=sellers_parallaxis&utm_medium=badges&utm_campaign=badge_large)
 
