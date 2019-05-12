@@ -4,8 +4,10 @@ _Samozřejmě osmibitový a s tak historickým duchem, jak to jen jde._
 
 [![I sell on Tindie](https://d2ss6ovg47m0r5.cloudfront.net/badges/tindie-larges.png)](https://www.tindie.com/stores/parallaxis/?ref=offsite_badges&utm_source=sellers_parallaxis&utm_medium=badges&utm_campaign=badge_large)
 
-[Essential ICs on AliExpress](https://alitronik.com/omen-alpha-pack/)
-[Essential ICs on eBay](https://alitronik.com/omen-alpha-pack-ebay/)
+- [Essential ICs on AliExpress](https://alitronik.com/omen-alpha-pack/)
+- [Essential ICs on eBay](https://alitronik.com/omen-alpha-pack-ebay/)
+
+[BOM - Seznam součástek](./BOM.md)
 
 
 Když jsem přemýšlel o tom, jak pojmout svou další knihy, bylo mi jasné, že suchý výklad nebude stačit. Tedy, on by stačil, ale já nejsem zrovna příznivcem teoretických učebnic bez přesahu do praxe. Bylo tedy samozřejmé, že nějakou konstrukci chci.
