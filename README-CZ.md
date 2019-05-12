@@ -1,4 +1,4 @@
-# OMEN Alpha: Stavíme vlastní počítač  - [[English](README-CZ.md)]
+# OMEN Alpha: Stavíme vlastní počítač  - [[English](README.md)]
 
 _Samozřejmě osmibitový a s tak historickým duchem, jak to jen jde._
 
