@@ -7,29 +7,34 @@
 ; ...
 ; 7FC0 - 7FFF
 
-; EEPROM needs at least 150 us between bytes in one page
-; and at least 10 ms after the last byte of given page.
-
 ; Do not forget switch the WREN to the ENABLE position!
+
+; compile
+; load
+; G 8000
+; read memory at 7300h
 
             .ORG    8000h 
 
             LXI     h,7300h 
-            MVI     a,11h 
-            CALL    eewrite 
-            MVI     a,022h 
-            CALL    eewrite 
-            MVI     a,033h 
-            CALL    eewrite 
-            MVI     a,044h 
+            MVI     a,055h 
             CALL    eewrite 
             MVI     a,0AAh 
             CALL    eewrite 
-            MVI     a,0EEh 
+            MVI     a,0DEh 
+            CALL    eewrite 
+            MVI     a,0ADh 
+            CALL    eewrite 
+            MVI     a,0BEh 
+            CALL    eewrite 
+            MVI     a,0EFh 
+            CALL    eewrite 
+            MVI     a,055h 
+            CALL    eewrite 
+            MVI     a,0AAh 
             CALL    eewrite 
 
-;page write pause 10ms
-            LXI     d,1000 
+;page write check /data poll
             CALL    dloop 
             JMP     0 
 
@@ -37,14 +42,18 @@
 EEWRITE:             
             MOV     m,a 
             INX     h 
-;at least 150us pause
-            LXI     d,12 
+            STA     LASTBYTE 
+            RET      
 
-;delay
+;Wait for real data
+;Due to the /DATA polling the data you read will always have D7 inverted
+;during the internal write cycle
 DLOOP:               
-            DCX     D ;  6 T
-            MOV     A,D ;  4 T
-            ORA     E ;  4 T
-            JNZ     DLOOP ; 10 T / 7 T
+            DCX     h 
+            MOV     m,a 
+            CPI     0 
+LASTBYTE    EQU     $-1 
+            JNZ     dloop 
+            INX     h 
             RET      ; 10 T
 
