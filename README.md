@@ -16,3 +16,7 @@ It means: how to set up a CPU, how to connect memories, how to connect periphera
 
 This computer is a "demo construction": A computer, based on 8085 CPU, with 32 kB of (EEP)ROM and 32 kB of RAM, serial connection and parallel ports. All should be as simple as possible. And here is a result.
 
+ROM
+---
+
+Use the last Monitor file - see [sw/Monitor/v4](sw/Monitor/v4)

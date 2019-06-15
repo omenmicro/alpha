@@ -1,0 +1,20 @@
+; KILO ROM Module
+; Needs these instructions on the begin:
+            .CSEG   
+            ALIGN   256 
+.block
+            JMP     testmod ; Jump to the begin
+
+; Needed signature: MOD9 + module name + trailing zero
+            .ISTR   "MOD4TestMod" 
+
+; here are your space:
+TESTMOD:            
+    lxi h,hello
+            RST 3
+            DB 5
+            RST 0
+hello:
+            .ISTR   "Test module",$0d,$0a 
+
+.endblock
