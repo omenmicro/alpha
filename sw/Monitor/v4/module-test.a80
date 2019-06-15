@@ -1,14 +1,14 @@
-; KILO ROM Module
+; ALPHA ROM Module
 ; Needs these instructions on the begin:
             .CSEG   
             ALIGN   256 
 .block
             JMP     testmod ; Jump to the begin
 
-; Needed signature: MOD9 + module name + trailing zero
+; Needed signature: MOD4 + module name, last char with bit 7=1
             .ISTR   "MOD4TestMod" 
 
-; here are your space:
+; here is your space:
 TESTMOD:            
     lxi h,hello
             RST 3
