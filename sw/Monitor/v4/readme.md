@@ -23,7 +23,7 @@ You can now use some monitor routines:
 
 `RST 1` sends the value in accumulator to the serial port.
 
-`RST 2` calls the SERIN routine - it waits for serial port and returns the last character received in the A register (accumulator).
+`RST 2` calls the SERIN routine - it checks serial port and returns the last character received in the A register (accumulator). If there is no character waiting, it sets Z flag.
 
 `RST 3` is a SYSCALL - System call routine. It is followed by a byte, which specify the desired function. Values are:
 
