@@ -1,4 +1,4 @@
-;            .ENGINE alpha 
+            .ENGINE alpha 
             .ORG    0 
 
                     ; inicializace()
@@ -10,7 +10,7 @@ RESET:      DI
             JMP     COLD 
 
             DB      "A" ; padding na osm byte
-RST1:               ;mlo by b˝t na adrese 0008
+RST1:               ;mƒõlo by b√Ωt na adrese 0008
             JMP     SEROUT 
 
             .ORG    10h 
@@ -52,6 +52,7 @@ SYSTAB:
             JMP     SERIN 
             JMP     SEROUT 
             JMP     STROUT
+            JMP PRINTADDR
 
 BRKPT:              
             SHLD    BRKPSW 
@@ -84,10 +85,10 @@ BRKPT:
 
 BRKSTR:     DB      0Dh,0Ah 
             .ISTR   "*BREAK at " 
-                    ;--- ServisnÌ rutiny
+                    ;--- Servisn√≠ rutiny
 
                     ;--- ======== ACIA
-                    ; adresace sÈriovÈho rozhranÌ
+                    ; adresace s√©riov√©ho rozhran√≠
 ACIA        EQU     0DEh 
 ACIAC       EQU     ACIA 
 ACIAS       EQU     ACIA 
@@ -106,7 +107,7 @@ SEROUT:
             PUSH    PSW 
 SO_WAIT:            
             IN      ACIAS 
-            ANI     ACIA_TDRE ;bit TDRE - pokud lze vysÌlat, je =1
+            ANI     ACIA_TDRE ;bit TDRE - pokud lze vys√≠lat, je =1
             JZ      SO_WAIT 
             POP     PSW 
             OUT     ACIAD 
@@ -169,7 +170,7 @@ COLD:
                     ;inicializace ACIA
             MVI     A,15h ; 115200 Bd, 8 bit, no parity, 1 stop bit, no IRQ
             OUT     ACIAC 
-                    ;UvÌtacÌ zpr·va
+                    ;Uv√≠tac√≠ zpr√°va
 WARM:               
             LXI     H,HELLO 
 WARMPRINT:          
@@ -182,7 +183,7 @@ MAINLOOP:
             CALL    SERIN 
             JZ      MAINLOOP 
             CPI     ":" 
-            JZ      CHEXIN ; pYÌkaz : - natenÌ HEX form·tu
+            JZ      CHEXIN ; p≈ô√≠kaz : - naƒçten√≠ HEX form√°tu
             CPI     0Dh 
             JZ      MAINLOOP 
             CPI     0AH 
@@ -192,27 +193,27 @@ MAINLOOP:
             SBI     20h 
 UPPERCASE:          
             CPI     "M" 
-            JZ      CMEM ; pYÌkaz M - zmna pamti
+            JZ      CMEM ; p≈ô√≠kaz M - zmƒõna pamƒõti
             CPI     "G" 
-            JZ      CGO ; pYÌkaz G - skok na zadanou adresu
+            JZ      CGO ; p≈ô√≠kaz G - skok na zadanou adresu
             CPI     "D" 
-            JZ      CDUMP ; pYÌkaz D - v˝pis pamti
+            JZ      CDUMP ; p≈ô√≠kaz D - v√Ωpis pamƒõti
 ;            CPI     "B" 
-;            JZ      CBASIC ; pYÌkaz D - v˝pis pamti
+;            JZ      CBASIC ; p≈ô√≠kaz D - v√Ωpis pamƒõti
             CPI     "R" 
-            JZ      CREGS ; pYÌkaz R - v˝pis registro
+            JZ      CREGS ; p≈ô√≠kaz R - v√Ωpis registr≈Ø
             CPI     "X" 
-            JZ      CBRK ; pYÌkaz X - set breakpoint
+            JZ      CBRK ; p≈ô√≠kaz X - set breakpoint
             CPI     "C" 
-            JZ      CCONT ; pYÌkaz C - breakpoint continue
+            JZ      CCONT ; p≈ô√≠kaz C - breakpoint continue
 
             CPI     "U" 
-            JZ      CMOD ; pYÌkaz C - breakpoint continue
+            JZ      CMOD ; p≈ô√≠kaz C - breakpoint continue
 
             CPI     "H" 
-            JZ      CHELP ; pYÌkaz C - breakpoint continue
+            JZ      CHELP ; p≈ô√≠kaz C - breakpoint continue
             CPI     "?" 
-            JZ      CHELP ; pYÌkaz C - breakpoint continue
+            JZ      CHELP ; p≈ô√≠kaz C - breakpoint continue
 
 
 
@@ -409,9 +410,9 @@ DUMPCHAR:
 CDUMPKEY:           
             CALL    SERIN 
             JZ      CDUMPKEY 
-            CPI     20h ; mezernÌk ukonÌ dump
+            CPI     20h ; mezern√≠k ukonƒç√≠ dump
             JZ      MAIN 
-            CPI     0dh ; enter jde na dalaÌ adresu
+            CPI     0dh ; enter jde na dal≈°√≠ adresu
             JZ      CDUMPN 
 
                     ;dump end
@@ -521,7 +522,7 @@ cmd1 call cmodtest
  jnz cmdn
  mvi l,0
  pchl
-                    ;--- PomocnÈ rutiny
+                    ;--- Pomocn√© rutiny
                     
 SERCRLF:
     mvi a,0Dh
@@ -639,7 +640,7 @@ PRINTHEX1:
             JMP     SEROUT 
 
 
-                    ;--- Hl·aky Monitoru
+                    ;--- Hl√°≈°ky Monitoru
 
 HELLO:              
             DB      "OMEN ALPHA",0Dh,0Ah 
@@ -670,12 +671,15 @@ HELP:       DB      0dh,0ah,"COMMANDS:"
             DB      0dh,0ah,"R: Show / alter registers (use in break)" 
 
             .ISTR   0dh,0ah 
+
+; thanks to all my patrons
+            .include patreon.a80
 last equ $            
             
     .include module-basic.a80
     .include module-test.a80      
-
-                    ;--- OperanÌ pame pro MONITOR - na konci RAM
+    .include module-loader.a80
+                    ;--- Operaƒçn√≠ pamƒõ≈• pro MONITOR - na konci RAM
             .ORG    0FF00h 
 STACK       EQU     $ 
 RAMTOP      EQU     $ 

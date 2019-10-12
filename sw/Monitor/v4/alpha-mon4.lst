@@ -1,0 +1,3484 @@
+0000                          .ENGINE   alpha   
+0000                          .ORG   0   
+0000                             ; inicializace()
+0000   F3           RESET:    DI      
+0001   31 00 FF               LXI   SP,STACK   
+0004   C3 B5 00               JMP   COLD   
+0007   41                     DB   "A"   ; padding na osm byte
+0008                RST1:        ;mělo by být na adrese 0008
+0008   C3 8A 00               JMP   SEROUT   
+0010                          .ORG   10h   
+0010                RST2:        ;SERIN
+0010   C3 A4 00               JMP   SERIN   
+0018                          .ORG   18h   
+0018                RST3:        ;SYS CALL
+0018   E3                     XTHL      
+0019   4E                     MOV   C,M   
+001A   23                     INX   H   
+001B   E3                     XTHL      
+001C   C3 28 00               JMP   SYSCALL   
+0020                          .ORG   20h   
+0020                RST4:        ;breakpoint
+0020   F5                     PUSH   PSW   
+0021   22 01 FF               SHLD   BRKHL   
+0024   E3                     XTHL      
+0025   C3 4B 00               JMP   BRKPT   
+0028                SYSCALL:      
+0028   E5                     PUSH   h   
+0029   D5                     PUSH   d   
+002A   21 36 00               LXI   h,SYSTAB   
+002D   59                     MOV   e,c   
+002E   16 00                  MVI   d,0   
+0030   19                     DAD   d   
+0031   19                     DAD   d   
+0032   19                     DAD   d   
+0033   D1                     POP   d   
+0034   E3                     XTHL      
+0035   C9                     RET      
+0036                SYSTAB:      
+0036   C3 00 00               JMP   RESET   
+0039   C3 B9 00               JMP   WARM   
+003C   C3 AD 00               JMP   SERST   
+003F   C3 A4 00               JMP   SERIN   
+0042   C3 8A 00               JMP   SEROUT   
+0045   C3 96 00               JMP   STROUT   
+0048   C3 7F 03               JMP   PRINTADDR   
+004B                BRKPT:       
+004B   22 07 FF               SHLD   BRKPSW   
+004E   F1                     POP   PSW   
+004F   21 00 00               LXI   h,0   
+0052   39                     DAD   sp   
+0053   22 05 FF               SHLD   brksp   
+0056   E1                     POP   H   
+0057   2B                     DCX   h   ;back 1 byte...
+0058   22 03 FF               SHLD   BRKPC   
+005B   3A 00 FF               LDA   BRKBYTE   
+005E   77                     MOV   M,A   ;restore original content
+005F   D5                     PUSH   d   
+0060   E1                     POP   h   
+0061   22 0B FF               SHLD   brkdE   
+0064   C5                     PUSH   b   
+0065   E1                     POP   h   
+0066   22 09 FF               SHLD   brkbC   
+0069   21 7E 00               LXI   h,brkstr   
+006C   CD 96 00               CALL   strout   
+006F   2A 03 FF               LHLD   brkpc   
+0072   CD 7F 03               CALL   printaddr   
+0075   3E 0D                  MVI   a,0Dh   
+0077   CF                     RST   1   
+0078   3E 0A                  MVI   a,0ah   
+007A   CF                     RST   1   
+007B                             ;all registers saved
+007B   C3 BF 00               JMP   main   
+007E   0D 0A        BRKSTR:   DB   0Dh,0Ah   
+0080   2A 42 52 45 41 4B 20 61 74 A0 .ISTR   "*BREAK at "   
+008A                             ;--- Servisní rutiny
+008A                             ;--- ======== ACIA
+008A                             ; adresace sériového rozhraní
+008A                ACIA:     EQU   0DEh   
+008A                ACIAC:    EQU   ACIA   
+008A                ACIAS:    EQU   ACIA   
+008A                ACIAD:    EQU   ACIA+1   
+008A                ACIA_TDRE:   EQU   02h   
+008A                ACIA_RDRF:   EQU   01h   
+008A                             ;@SEROUT
+008A                             ;Send character to ACIA
+008A                             ;>A Character to send on serial port
+008A                             ;--------------------------------
+008A                SEROUT:      
+008A   F5                     PUSH   PSW   
+008B                SO_WAIT:      
+008B   DB DE                  IN   ACIAS   
+008D   E6 02                  ANI   ACIA_TDRE   ;bit TDRE - pokud lze vysílat, je =1
+008F   CA 8B 00               JZ   SO_WAIT   
+0092   F1                     POP   PSW   
+0093   D3 DF                  OUT   ACIAD   
+0095   C9                     RET      
+0096                             ;@STROUT
+0096                             ;Send string to ACIA
+0096                             ;String is ended by char +80h
+0096                             ;>HL Address of string
+0096                             ;<HL Address of the last character
+0096                             ;*A,PSW
+0096                             ;--------------------------------
+0096                STROUT:      
+0096   7E                     MOV   A,M   
+0097   E6 7F                  ANI   7Fh   
+0099   CD 8A 00               CALL   SEROUT   
+009C   7E                     MOV   A,M   
+009D   E6 80                  ANI   80h   
+009F   C0                     RNZ      
+00A0   23                     INX   H   
+00A1   C3 96 00               JMP   STROUT   
+00A4                             ;@SERIN
+00A4                             ;Reads a character from serial port
+00A4                             ;If none is ready, returns A=0, Z=1
+00A4                             ;<A Character read, 0 if none received
+00A4                             ;<Z 1 = no character, 0 = character
+00A4                             ;-----------------------
+00A4                SERIN:       
+00A4   DB DE                  IN   ACIAS   
+00A6   E6 01                  ANI   ACIA_RDRF   
+00A8   C8                     RZ      
+00A9   DB DF                  IN   ACIAD   
+00AB   B7                     ORA   A   
+00AC   C9                     RET      
+00AD                             ;@SERST
+00AD                             ;Reads a serial port receiver status
+00AD                             ;If none is received, returns A=0, Z=1
+00AD                             ;Otherwise Z=0, A=FFh
+00AD                             ;<A Status, 0 if none received, FF if character is ready
+00AD                             ;<Z 1 = no character, 0 = character
+00AD                             ;-----------------------
+00AD                SERST:       
+00AD   DB DE                  IN   ACIAS   
+00AF   E6 01                  ANI   ACIA_RDRF   
+00B1   C8                     RZ      
+00B2   3E FF                  MVI   a,0FFh   
+00B4   C9                     RET      
+00B5                             ;--- ======= ACIA konec
+00B5                             ; Inicializace
+00B5                COLD:        
+00B5                             ;inicializace ACIA
+00B5   3E 15                  MVI   A,15h   ; 115200 Bd, 8 bit, no parity, 1 stop bit, no IRQ
+00B7   D3 DE                  OUT   ACIAC   
+00B9                             ;Uvítací zpráva
+00B9                WARM:        
+00B9   21 A4 03               LXI   H,HELLO   
+00BC                WARMPRINT:      
+00BC   CD 96 00               CALL   STROUT   
+00BF                MAIN:        
+00BF   3E 3E                  MVI   a,">"   
+00C1   CF                     RST   1   
+00C2                MAINLOOP:      
+00C2   CD A4 00               CALL   SERIN   
+00C5   CA C2 00               JZ   MAINLOOP   
+00C8   FE 3A                  CPI   ":"   
+00CA   CA 4C 02               JZ   CHEXIN   ; příkaz : - načtení HEX formátu
+00CD   FE 0D                  CPI   0Dh   
+00CF   CA C2 00               JZ   MAINLOOP   
+00D2   FE 0A                  CPI   0AH   
+00D4   CA C2 00               JZ   MAINLOOP   
+00D7   FE 61                  CPI   "a"   
+00D9   DA DE 00               JC   uppercase   
+00DC   DE 20                  SBI   20h   
+00DE                UPPERCASE:      
+00DE   FE 4D                  CPI   "M"   
+00E0   CA D4 01               JZ   CMEM   ; příkaz M - změna paměti
+00E3   FE 47                  CPI   "G"   
+00E5   CA F9 01               JZ   CGO   ; příkaz G - skok na zadanou adresu
+00E8   FE 44                  CPI   "D"   
+00EA   CA FD 01               JZ   CDUMP   ; příkaz D - výpis paměti
+00ED                             ;            CPI     "B"
+00ED                             ;            JZ      CBASIC ; příkaz D - výpis paměti
+00ED   FE 52                  CPI   "R"   
+00EF   CA 17 01               JZ   CREGS   ; příkaz R - výpis registrů
+00F2   FE 58                  CPI   "X"   
+00F4   CA 9E 01               JZ   CBRK   ; příkaz X - set breakpoint
+00F7   FE 43                  CPI   "C"   
+00F9   CA BD 01               JZ   CCONT   ; příkaz C - breakpoint continue
+00FC   FE 55                  CPI   "U"   
+00FE   CA 98 02               JZ   CMOD   ; příkaz C - breakpoint continue
+0101   FE 48                  CPI   "H"   
+0103   CA 11 01               JZ   CHELP   ; příkaz C - breakpoint continue
+0106   FE 3F                  CPI   "?"   
+0108   CA 11 01               JZ   CHELP   ; příkaz C - breakpoint continue
+010B                NOCMD:       
+010B   21 C3 03               LXI   H,WHAT   
+010E   C3 BC 00               JMP   WARMPRINT   
+0111                             ; ---- commands
+0111                CHELP:       
+0111   21 12 04               LXI   H,HELP   
+0114   C3 BC 00               JMP   WARMPRINT   
+0117                CREGS:       
+0117   21 08 FF               LXI   h,BRKPSW+1   
+011A   3E 41                  MVI   a,"A"   
+011C   CD 6B 01               CALL   crone   
+011F   21 0A FF               LXI   h,BRKBC+1   
+0122   3E 42                  MVI   a,"B"   
+0124   CD 6B 01               CALL   crone   
+0127   2B                     DCX   h   
+0128   3E 43                  MVI   a,"C"   
+012A   CD 6B 01               CALL   crone   
+012D   21 0C FF               LXI   h,BRKDE+1   
+0130   3E 44                  MVI   a,"D"   
+0132   CD 6B 01               CALL   crone   
+0135   2B                     DCX   h   
+0136   3E 45                  MVI   a,"E"   
+0138   CD 6B 01               CALL   crone   
+013B   21 02 FF               LXI   h,BRKHL+1   
+013E   3E 48                  MVI   a,"H"   
+0140   CD 6B 01               CALL   crone   
+0143   2B                     DCX   h   
+0144   3E 4C                  MVI   a,"L"   
+0146   CD 6B 01               CALL   crone   
+0149   11 67 01               LXI   d,crsp   
+014C   2A 05 FF               LHLD   BRKSP   
+014F   CD 84 01               CALL   crtwo   
+0152   22 05 FF               SHLD   BRKSP   
+0155   11 69 01               LXI   d,crpc   
+0158   2A 03 FF               LHLD   BRKPC   
+015B   CD 84 01               CALL   crtwo   
+015E   22 03 FF               SHLD   BRKPC   
+0161                MAINCR:      
+0161   CD 01 03               CALL   SERCRLF   
+0164   C3 BF 00               JMP   main   
+0167   53 D0        CRSP:     .ISTR   "SP"   
+0169   50 C3        CRPC:     .ISTR   "PC"   
+016B                CRONE:       
+016B   F5                     PUSH   psw   
+016C   3E 0D                  MVI   a,0Dh   
+016E   CF                     RST   1   
+016F   3E 0A                  MVI   a,0Ah   
+0171   CF                     RST   1   
+0172   F1                     POP   psw   
+0173   CF                     RST   1   
+0174   3E 20                  MVI   A," "   
+0176   CF                     RST   1   
+0177   7E                     MOV   A,M   
+0178   CD 84 03               CALL   PRINTHEX   
+017B   3E 20                  MVI   A," "   
+017D   CF                     RST   1   
+017E   4E                     MOV   C,M   
+017F   CD 4D 03               CALL   GETBYTE   
+0182   71                     MOV   M,C   
+0183   C9                     RET      
+0184                CRTWO:       
+0184   E5                     PUSH   h   
+0185   3E 0D                  MVI   a,0Dh   
+0187   CF                     RST   1   
+0188   3E 0A                  MVI   a,0Ah   
+018A   CF                     RST   1   
+018B   D5                     PUSH   d   
+018C   E1                     POP   h   
+018D   CD 96 00               CALL   strout   
+0190   3E 20                  MVI   A," "   
+0192   CF                     RST   1   
+0193   E1                     POP   h   
+0194   CD 7F 03               CALL   PRINTADDR   
+0197   3E 20                  MVI   A," "   
+0199   CF                     RST   1   
+019A   CD 14 03               CALL   GETADDR1   
+019D   C9                     RET      
+019E                CBRK:        
+019E   CD 0B 03               CALL   GETADDR   
+01A1   7E                     MOV   A,M   
+01A2   32 00 FF               STA   BRKBYTE   
+01A5   36 E7                  MVI   M,0e7h   ;RST 4
+01A7   21 AD 01               LXI   h,brkset   
+01AA   C3 BC 00               JMP   warmprint   
+01AD   42 52 45 41 4B 50 4F 49 4E 54 20 53 45 54 0D 8A BRKSET:   .ISTR   "BREAKPOINT SET",0dh,0ah   
+01BD                CCONT:       
+01BD   2A 03 FF               LHLD   brkpc   
+01C0   E5                     PUSH   h   
+01C1   2A 07 FF               LHLD   brkpsw   
+01C4   E5                     PUSH   h   
+01C5   2A 0B FF               LHLD   brkde   
+01C8   E5                     PUSH   h   
+01C9   2A 09 FF               LHLD   brkbc   
+01CC   E5                     PUSH   h   
+01CD   2A 01 FF               LHLD   brkhl   
+01D0   C1                     POP   b   
+01D1   D1                     POP   d   
+01D2   F1                     POP   psw   
+01D3   C9                     RET      
+01D4                CMEM:        
+01D4   CD 0B 03               CALL   GETADDR   
+01D7                CMEM1:       
+01D7   3E 0D                  MVI   A,0DH   
+01D9   CF                     RST   1   
+01DA   3E 0A                  MVI   A,0AH   
+01DC   CF                     RST   1   
+01DD   CD 7F 03               CALL   PRINTADDR   
+01E0   3E 20                  MVI   A," "   
+01E2   CF                     RST   1   
+01E3   7E                     MOV   A,M   
+01E4   CD 84 03               CALL   PRINTHEX   
+01E7   3E 20                  MVI   A," "   
+01E9   CF                     RST   1   
+01EA   4E                     MOV   C,M   
+01EB   CD 4D 03               CALL   GETBYTE   
+01EE   71                     MOV   M,C   
+01EF   23                     INX   H   
+01F0   78                     MOV   A,B   
+01F1   FE 0D                  CPI   0DH   
+01F3   CA D7 01               JZ   CMEM1   
+01F6   C3 61 01               JMP   MAINcr   
+01F9                CGO:         
+01F9   CD 0B 03               CALL   GETADDR   
+01FC   E9                     PCHL      
+01FD                DUMPCHARS:   EQU   16   
+01FD                CDUMP:       
+01FD   CD 0B 03               CALL   GETADDR   
+0200   3E 0D                  MVI   A,0DH   
+0202   CF                     RST   1   
+0203   3E 0A                  MVI   A,0AH   
+0205   CF                     RST   1   
+0206                CDUMPN:      
+0206   CD 7F 03               CALL   PRINTADDR   
+0209   0E 10                  MVI   c,DUMPCHARS   
+020B   3E 20                  MVI   A," "   
+020D   CF                     RST   1   
+020E   E5                     PUSH   h   
+020F                CDUMP1:      
+020F   7E                     MOV   A,M   
+0210   CD 84 03               CALL   PRINTHEX   
+0213   23                     INX   h   
+0214   0D                     DCR   c   
+0215   C2 0F 02               JNZ   cdump1   
+0218   E1                     POP   h   
+0219   3E 20                  MVI   A," "   
+021B   CF                     RST   1   
+021C   0E 10                  MVI   C,DUMPCHARS   
+021E                CDUMP2:      
+021E   7E                     MOV   A,M   
+021F   FE 20                  CPI   20h   
+0221   DA 29 02               JC   DUMPSANE   
+0224   FE 80                  CPI   80h   
+0226   DA 2B 02               JC   dumpchar   
+0229                DUMPSANE:      
+0229   3E 2E                  MVI   a,"."   
+022B                DUMPCHAR:      
+022B   CD 8A 00               CALL   SEROUT   
+022E   23                     INX   h   
+022F   0D                     DCR   c   
+0230   C2 1E 02               JNZ   cdump2   
+0233   3E 0D                  MVI   A,0DH   
+0235   CF                     RST   1   
+0236   3E 0A                  MVI   A,0AH   
+0238   CF                     RST   1   
+0239                CDUMPKEY:      
+0239   CD A4 00               CALL   SERIN   
+023C   CA 39 02               JZ   CDUMPKEY   
+023F   FE 20                  CPI   20h   ; mezerník ukončí dump
+0241   CA BF 00               JZ   MAIN   
+0244   FE 0D                  CPI   0dh   ; enter jde na další adresu
+0246   CA 06 02               JZ   CDUMPN   
+0249                             ;dump end
+0249   C3 39 02               JMP   CDUMPKEY   
+024C                CHEXIN:      
+024C   CD 2B 03               CALL   GET1BYTE   
+024F   4F                     MOV   C,A   
+0250   CD 44 03               CALL   GET2BYTEREV   
+0253                             ;type
+0253   CD 2B 03               CALL   GET1BYTE   
+0256   B7                     ORA   A   
+0257   C2 73 02               JNZ   HEXLAST   
+025A                             ;byte2byte
+025A                HEXWRITER:      
+025A   CD 2B 03               CALL   GET1BYTE   
+025D   77                     MOV   M,A   
+025E   23                     INX   H   
+025F   0D                     DCR   C   
+0260   C2 5A 02               JNZ   HEXWRITER   
+0263                HEXCR:       
+0263   CD A4 00               CALL   SERIN   
+0266   FE 0D                  CPI   0Dh   
+0268   C2 73 02               JNZ   HEXLAST   
+026B   3E 24                  MVI   A,"$"   
+026D   CD 8A 00               CALL   SEROUT   
+0270   C3 BF 00               JMP   MAIN   
+0273                HEXLAST:      
+0273   CD A4 00               CALL   SERIN   
+0276   FE 0D                  CPI   0Dh   
+0278   C2 73 02               JNZ   HEXLAST   
+027B   21 0C 04               LXI   H,DONE   
+027E   CD 96 00               CALL   STROUT   
+0281   C3 BF 00               JMP   MAIN   
+0284                             ; 
+0284                CMODTEST:      
+0284   7E                     MOV   a,m   
+0285   2C                     INR   l   
+0286   FE 4D                  CPI   "M"   
+0288   C0                     RNZ      
+0289   7E                     MOV   a,m   
+028A   2C                     INR   l   
+028B   FE 4F                  CPI   "O"   
+028D   C0                     RNZ      
+028E   7E                     MOV   a,m   
+028F   2C                     INR   l   
+0290   FE 44                  CPI   "D"   
+0292   C0                     RNZ      
+0293   7E                     MOV   a,m   
+0294   2C                     INR   l   
+0295   FE 34                  CPI   "4"   
+0297   C9                     RET      
+0298                CMOD:        
+0298   21 CA 03               LXI   h,mods   
+029B   CD 96 00               CALL   strout   
+029E                          .ENT   $   
+029E   21 DD 04               LXI   h,last   
+02A1   0E 41                  MVI   c,"A"   
+02A3                CMNEXT:      
+02A3   2E 03                  MVI   l,3   
+02A5   24                     INR   h   
+02A6   7C                     MOV   a,h   
+02A7   FE 80                  CPI   80h   
+02A9   D2 CA 02               JNC   cmdone   
+02AC                CM1:         
+02AC   CD 84 02               CALL   cmodtest   
+02AF   C2 A3 02               JNZ   cmnext   
+02B2   79                     MOV   a,c   
+02B3   0C                     INR   c   
+02B4   CD 8A 00               CALL   serout   
+02B7   3E 3A                  MVI   a,":"   
+02B9   CD 8A 00               CALL   serout   
+02BC   3E 20                  MVI   a,20h   
+02BE   CD 8A 00               CALL   serout   
+02C1   CD 96 00               CALL   strout   
+02C4   CD 01 03               CALL   sercrlf   
+02C7   C3 A3 02               JMP   cmnext   
+02CA   21 E0 03     CMDONE:   LXI   h,modsel   
+02CD   CD 96 00               CALL   strout   
+02D0   CD A4 00     CMDWAI:   CALL   serin   
+02D3   CA D0 02               JZ   cmdwai   
+02D6   FE 20                  CPI   20h   
+02D8   CA 61 01               JZ   maincr   
+02DB   FE 0D                  CPI   0Dh   
+02DD   CA 61 01               JZ   maincr   
+02E0   FE 0A                  CPI   0Ah   
+02E2   CA 61 01               JZ   maincr   
+02E5   DE 40                  SBI   40h   
+02E7   4F                     MOV   c,a   
+02E8   21 DD 04               LXI   h,last   
+02EB                CMDN:        
+02EB   2E 03                  MVI   l,3   
+02ED   24                     INR   h   
+02EE   7C                     MOV   a,h   
+02EF   FE 80                  CPI   80h   
+02F1   D2 61 01               JNC   maincr   
+02F4   CD 84 02     CMD1:     CALL   cmodtest   
+02F7   C2 EB 02               JNZ   cmdn   
+02FA   0D                     DCR   c   
+02FB   C2 EB 02               JNZ   cmdn   
+02FE   2E 00                  MVI   l,0   
+0300   E9                     PCHL      
+0301                             ;--- Pomocné rutiny
+0301                SERCRLF:      
+0301   3E 0D                  MVI   a,0Dh   
+0303   CD 8A 00               CALL   serout   
+0306   3E 0A                  MVI   a,0Ah   
+0308   C3 8A 00               JMP   serout   
+030B                GETADDR:      
+030B   21 07 04               LXI   H,ADDR   
+030E   CD 96 00               CALL   STROUT   
+0311   21 00 00               LXI   H,0   
+0314                GETADDR1:      
+0314   CD A4 00               CALL   SERIN   
+0317   CA 14 03               JZ   GETADDR1   
+031A   CF                     RST   1   
+031B   CD 69 03               CALL   ISHEX   
+031E   D8                     RC      
+031F   CD 77 03               CALL   ATOHEX   
+0322   29                     DAD   H   
+0323   29                     DAD   H   
+0324   29                     DAD   H   
+0325   29                     DAD   H   
+0326   85                     ADD   L   
+0327   6F                     MOV   L,A   
+0328   C3 14 03               JMP   GETADDR1   
+032B                GET1BYTE:      
+032B   CD A4 00               CALL   SERIN   
+032E   CA 2B 03               JZ   GET1BYTE   
+0331   CD 77 03               CALL   ATOHEX   
+0334   87                     ADD   A   
+0335   87                     ADD   A   
+0336   87                     ADD   A   
+0337   87                     ADD   A   
+0338   47                     MOV   B,A   
+0339                GET1B1:      
+0339   CD A4 00               CALL   SERIN   
+033C   CA 39 03               JZ   GET1B1   
+033F   CD 77 03               CALL   ATOHEX   
+0342   80                     ADD   B   
+0343   C9                     RET      
+0344                GET2BYTEREV:      
+0344   CD 2B 03               CALL   GET1BYTE   
+0347   67                     MOV   H,A   
+0348   CD 2B 03               CALL   GET1BYTE   
+034B   6F                     MOV   L,A   
+034C   C9                     RET      
+034D                GETBYTE:      
+034D   06 00                  MVI   B,0   
+034F                GETBYTE1:      
+034F   CD A4 00               CALL   SERIN   
+0352   CA 4F 03               JZ   GETBYTE1   
+0355   CF                     RST   1   
+0356   CD 69 03               CALL   ISHEX   
+0359   47                     MOV   B,A   
+035A   D8                     RC      
+035B   CD 77 03               CALL   ATOHEX   
+035E   57                     MOV   D,A   
+035F   79                     MOV   A,C   
+0360   87                     ADD   A   
+0361   87                     ADD   A   
+0362   87                     ADD   A   
+0363   87                     ADD   A   
+0364   82                     ADD   D   
+0365   4F                     MOV   C,A   
+0366   C3 4F 03               JMP   GETBYTE1   
+0369                ISHEX:       
+0369   FE 47                  CPI   "F"+1   
+036B   3F                     CMC      
+036C   D8                     RC      
+036D   FE 30                  CPI   "0"   
+036F   D8                     RC      
+0370   FE 3A                  CPI   "9"+1   
+0372   3F                     CMC      
+0373   D0                     RNC      
+0374   FE 41                  CPI   "A"   
+0376   C9                     RET      
+0377                ATOHEX:      
+0377   DE 30                  SBI   "0"   
+0379   FE 0A                  CPI   0Ah   
+037B   D8                     RC      
+037C   DE 07                  SBI   "A"-"9"-1   
+037E   C9                     RET      
+037F                PRINTADDR:      
+037F   7C                     MOV   A,H   
+0380   CD 84 03               CALL   PRINTHEX   
+0383   7D                     MOV   A,L   
+0384                PRINTHEX:      
+0384   F5                     PUSH   PSW   
+0385   1F                     RAR      
+0386   1F                     RAR      
+0387   1F                     RAR      
+0388   1F                     RAR      
+0389   E6 0F                  ANI   0fh   
+038B   C6 30                  ADI   "0"   
+038D   FE 3A                  CPI   "9"+1   
+038F   DA 94 03               JC   PRINTHEX1   
+0392   C6 07                  ADI   7   
+0394                PRINTHEX1:      
+0394   CF                     RST   1   
+0395   F1                     POP   PSW   
+0396   E6 0F                  ANI   0FH   
+0398   C6 30                  ADI   "0"   
+039A   FE 3A                  CPI   "9"+1   
+039C   DA 8A 00               JC   SEROUT   
+039F   C6 07                  ADI   7   
+03A1   C3 8A 00               JMP   SEROUT   
+03A4                             ;--- Hlášky Monitoru
+03A4                HELLO:       
+03A4   4F 4D 45 4E 20 41 4C 50 48 41 0D 0A DB   "OMEN ALPHA",0Dh,0Ah   
+03B0   4D 4F 4E 49 54 4F 52 20 56 34 0D 0A DB   "MONITOR V4",0Dh,0AH   
+03BC   52 45 41 44 59 0D 8A   .ISTR   "READY",0DH,0AH   
+03C3                WHAT:        
+03C3   57 48 41 54 3F 0D 8A   .ISTR   "WHAT?",0Dh,0Ah   
+03CA                MODS:        
+03CA   45 45 50 52 4F 4D 20 4D 6F 64 75 6C 65 73 20 4C 69 73 74 3A 0D 8A .ISTR   "EEPROM Modules List:",0Dh,0Ah   
+03E0                MODSEL:      
+03E0   53 65 6C 65 63 74 20 6D 6F 64 75 6C 65 2C 20 6F 72 20 70 72 65 73 73 20 45 4E 54 45 52 20 74 6F 20 65 78 69 74 20 BE .ISTR   "Select module, or press ENTER to exit >"   
+0407                ADDR:        
+0407   41 64 64 72 BA         .ISTR   "Addr:"   
+040C                DONE:        
+040C   44 4F 4E 45 0D 8A      .ISTR   "DONE",0Dh,0Ah   
+0412   0D 0A 43 4F 4D 4D 41 4E 44 53 3A HELP:   DB   0dh,0ah,"COMMANDS:"   
+041D   0D 0A 4D 3A 20 53 68 6F 77 20 2F 20 61 6C 74 65 72 20 6D 65 6D 6F 72 79 DB   0dh,0ah,"M: Show / alter memory"   
+0435   0D 0A 44 3A 20 44 75 6D 70 20 6D 65 6D 6F 72 79 DB   0dh,0ah,"D: Dump memory"   
+0445   0D 0A 47 3A 20 47 6F 20 74 6F 20 61 64 64 72 65 73 73 20 28 52 75 6E 29 DB   0dh,0ah,"G: Go to address (Run)"   
+045D                             ;            DB      0dh,0ah,"B: Start BASIC (if stored at 1000h)"
+045D   0D 0A 55 3A 20 4C 69 73 74 20 75 73 65 72 20 6D 6F 64 75 6C 65 73 DB   0dh,0ah,"U: List user modules"   
+0473   0D 0A 58 3A 20 53 65 74 20 62 72 65 61 6B 70 6F 69 6E 74 DB   0dh,0ah,"X: Set breakpoint"   
+0486   0D 0A 43 3A 20 43 6F 6E 74 69 6E 75 65 20 61 66 74 65 72 20 62 72 65 61 6B DB   0dh,0ah,"C: Continue after break"   
+049F   0D 0A 52 3A 20 53 68 6F 77 20 2F 20 61 6C 74 65 72 20 72 65 67 69 73 74 65 72 73 20 28 75 73 65 20 69 6E 20 62 72 65 61 6B 29 DB   0dh,0ah,"R: Show / alter registers (use in break)"   
+04C9   0D 8A                  .ISTR   0dh,0ah   
+04CB                             ; thanks to all my patrons
+04CB                             ; thanks to all my Patrons
+04CB                             ; see more at https://www.patreon.com/omenmicro
+04CB                             ; 
+04CB   44 61 6E 54 6F 6D 61 6E 65 6B 0D DB   "DanTomanek",0dh   
+04D6   4B 61 6D 69 6C 5A 0D   DB   "KamilZ",0dh   
+04DD                LAST:     EQU   $   
+04DD                             ;*************************************************************
+04DD                             ; 
+04DD                             ;                 TINY BASIC FOR INTEL 8080
+04DD                             ;                       VERSION 2.0
+04DD                             ;                     BY LI-CHEN WANG
+04DD                             ;                  MODIFIED AND TRANSLATED
+04DD                             ;                    TO INTEL MNEMONICS
+04DD                             ;                     BY ROGER RAUSKOLB
+04DD                             ;                      10 OCTOBER,1976
+04DD                             ;                        @COPYLEFT
+04DD                             ;                   ALL WRONGS RESERVED
+04DD                             ; 
+04DD                             ;*************************************************************
+04DD                             ; 
+04DD                             ; *** ZERO PAGE SUBROUTINES ***
+04DD                             ; 
+04DD                             ; THE 8080 INSTRUCTION SET LETS YOU HAVE 8 ROUTINES IN LOW
+04DD                             ; MEMORY THAT MAY BE CALLED BY RST N, N BEING 0 THROUGH 7.
+04DD                             ; THIS IS A ONE BYTE INSTRUCTION AND HAS THE SAME POWER AS
+04DD                             ; THE THREE BYTE INSTRUCTION CALL LLHH.  TINY BASIC WILL
+04DD                             ; USE RST 0 AS START AND RST 1 THROUGH RST 7 FOR
+04DD                             ; THE SEVEN MOST FREQUENTLY USED SUBROUTINES.
+04DD                             ; TWO OTHER SUBROUTINES (CRLF AND TSTNUM) ARE ALSO IN THIS
+04DD                             ; SECTION.  THEY CAN BE REACHED ONLY BY 3-BYTE CALLS.
+04DD                             ; 
+04DD                             ; ROM Module
+04DD                             ; Needs these instructions on the begin:
+04DD                          .CSEG      
+04DD                          ALIGN   256   
+0500                          .BLOCK      
+0500   C3 11 05               JMP   START   ; Jump to the begin
+0503                             ; Needed signature: MOD9 + module name + trailing zero
+0503   4D 4F 44 34 54 69 6E 79 20 42 41 53 49 C3 .ISTR   "MOD4Tiny BASIC"   
+0511                CR:       EQU   0DH   
+0511                LF:       EQU   0AH   
+0511                .macro DWA,
+0511                             ; 
+0511                 DB      >%%1 + 128
+0511                 DB      <%%1
+0511                .endm
+0511                 
+0511                             ; 
+0511                             ;.ORG    1000H
+0511   31 FF FF     START:    LXI   SP,STACK   ;*** COLD START ***
+0514   3E FF                  MVI   A,0FFH   
+0516   C3 D4 0B               JMP   INIT   
+0519                             ; 
+0519   3E 0D        CRLF:     MVI   A,0dh   ;*** CRLF ***
+051B                             ; 
+051B                RST2:        
+051B                OUTC:        
+051B   F5                     PUSH   PSW   ;*** OUTC OR RST 2 ***
+051C   3A 00 80               LDA   OCSW   ;PRINT CHARACTER ONLY
+051F   B7                     ORA   A   ;IF OCSW SWITCH IS ON
+0520   C3 FE 0B               JMP   OC2   ;REST OF THIS IS AT OC2
+0523                             ; 
+0523                RST3:        
+0523                EXPR:        
+0523   CD C1 08               CALL   EXPR2   ;*** EXPR OR RST 3 ***
+0526   E5                     PUSH   H   ;EVALUATE AN EXPRESSION
+0527   C3 7D 08               JMP   EXPR1   ;REST OF IT AT EXPR1
+052A   57                     DB   "W"   
+052B                             ; 
+052B                RST4:        
+052B                COMP:        
+052B   7C                     MOV   A,H   ;*** COMP OR RST 4 ***
+052C   BA                     CMP   D   ;COMPARE HL WITH DE
+052D   C0                     RNZ      ;RETURN CORRECT C AND
+052E   7D                     MOV   A,L   ;Z FLAGS
+052F   BB                     CMP   E   ;BUT OLD A IS LOST
+0530   C9                     RET      
+0531   41 4E                  DB   "AN"   
+0533                             ; 
+0533                RST5:        
+0533                IGNBLK:      
+0533   1A           SS1:      LDAX   D   ;*** IGNBLK/RST 5 ***
+0534   FE 20                  CPI   20H   ;IGNORE BLANKS
+0536   C0                     RNZ      ;IN TEXT (WHERE DE->)
+0537   13                     INX   D   ;AND RETURN THE FIRST
+0538   C3 33 05               JMP   SS1   ;NON-BLANK CHAR. IN A
+053B                             ; 
+053B                RST6:        
+053B                FINISH:      
+053B   F1                     POP   PSW   ;*** FINISH/RST 6 ***
+053C   CD 21 0A               CALL   FIN   ;CHECK END OF COMMAND
+053F   C3 3A 0A               JMP   QWHAT   ;PRINT "WHAT?" IF WRONG
+0542   47                     DB   "G"   
+0543                             ; 
+0543                RST7:        
+0543                TSTV:        
+0543   CD 33 05               CALL   IGNBLK   ;*** TSTV OR RST 7 ***
+0546   D6 40                  SUI   40H   ;TEST VARIABLES
+0548   D8                     RC      ;C:NOT A VARIABLE
+0549   C2 67 05               JNZ   TV1   ;NOT "@" ARRAY
+054C   13                     INX   D   ;IT IS THE "@" ARRAY
+054D   CD 78 09               CALL   PARN   ;@ SHOULD BE FOLLOWED
+0550   29                     DAD   H   ;BY (EXPR) AS ITS INDEX
+0551   DA B5 05               JC   QHOW   ;IS INDEX TOO BIG?
+0554   D5                     PUSH   D   ;WILL IT OVERWRITE
+0555   EB                     XCHG      ;TEXT?
+0556   CD BF 09               CALL   SIZE   ;FIND SIZE OF FREE
+0559   CD 2B 05               CALL   COMP   ;AND CHECK THAT
+055C   DA 6A 0A               JC   ASORRY   ;IF SO, SAY "SORRY"
+055F   21 00 FC               LXI   H,VARBGN   ;IF NOT GET ADDRESS
+0562   CD E2 09               CALL   SUBDE   ;OF @(EXPR) AND PUT IT
+0565   D1                     POP   D   ;IN HL
+0566   C9                     RET      ;C FLAG IS CLEARED
+0567   FE 1B        TV1:      CPI   1BH   ;NOT @, IS IT A TO Z?
+0569   3F                     CMC      ;IF NOT RETURN C FLAG
+056A   D8                     RC      
+056B   13                     INX   D   ;IF A THROUGH Z
+056C   21 00 FC               LXI   H,VARBGN   ;COMPUTE ADDRESS OF
+056F   07                     RLC      ;THAT VARIABLE
+0570   85                     ADD   L   ;AND RETURN IT IN HL
+0571   6F                     MOV   L,A   ;WITH C FLAG CLEARED
+0572   3E 00                  MVI   A,0   
+0574   8C                     ADC   H   
+0575   67                     MOV   H,A   
+0576   C9                     RET      
+0577                             ; 
+0577                RST1:        
+0577                TSTC:        
+0577   E3                     XTHL      ;*** TSTC OR RST 1 ***
+0578   CD 33 05               CALL   IGNBLK   ;IGNORE BLANKS AND
+057B   BE                     CMP   M   ;TEST CHARACTER
+057C   23           TC1:      INX   H   ;COMPARE THE BYTE THAT
+057D   CA 87 05               JZ   TC2   ;FOLLOWS THE RST INST.
+0580   C5                     PUSH   B   ;WITH THE TEXT (DE->)
+0581   4E                     MOV   C,M   ;IF NOT =, ADD THE 2ND
+0582   06 00                  MVI   B,0   ;BYTE THAT FOLLOWS THE
+0584   09                     DAD   B   ;RST TO THE OLD PC
+0585   C1                     POP   B   ;I.E., DO A RELATIVE
+0586   1B                     DCX   D   ;JUMP IF NOT =
+0587   13           TC2:      INX   D   ;IF =, SKIP THOSE BYTES
+0588   23                     INX   H   ;AND CONTINUE
+0589   E3                     XTHL      
+058A   C9                     RET      
+058B                             ; 
+058B   21 00 00     TSTNUM:   LXI   H,0   ;*** TSTNUM ***
+058E   44                     MOV   B,H   ;TEST IF THE TEXT IS
+058F   CD 33 05               CALL   IGNBLK   ;A NUMBER
+0592   FE 30        TN1:      CPI   30H   ;IF NOT, RETURN 0 IN
+0594   D8                     RC      ;B AND HL
+0595   FE 3A                  CPI   3AH   ;IF NUMBERS, CONVERT
+0597   D0                     RNC      ;TO BINARY IN HL AND
+0598   3E F0                  MVI   A,0F0H   ;SET B TO # OF DIGITS
+059A   A4                     ANA   H   ;IF H>255, THERE IS NO
+059B   C2 B5 05               JNZ   QHOW   ;ROOM FOR NEXT DIGIT
+059E   04                     INR   B   ;B COUNTS # OF DIGITS
+059F   C5                     PUSH   B   
+05A0   44                     MOV   B,H   ;HL=10*HL+(NEW DIGIT)
+05A1   4D                     MOV   C,L   
+05A2   29                     DAD   H   ;WHERE 10* IS DONE BY
+05A3   29                     DAD   H   ;SHIFT AND ADD
+05A4   09                     DAD   B   
+05A5   29                     DAD   H   
+05A6   1A                     LDAX   D   ;AND (DIGIT) IS FROM
+05A7   13                     INX   D   ;STRIPPING THE ASCII
+05A8   E6 0F                  ANI   0FH   ;CODE
+05AA   85                     ADD   L   
+05AB   6F                     MOV   L,A   
+05AC   3E 00                  MVI   A,0   
+05AE   8C                     ADC   H   
+05AF   67                     MOV   H,A   
+05B0   C1                     POP   B   
+05B1   1A                     LDAX   D   ;DO THIS DIGIT AFTER
+05B2   F2 92 05               JP   TN1   ;DIGIT. S SAYS OVERFLOW
+05B5   D5           QHOW:     PUSH   D   ;*** ERROR "HOW?" ***
+05B6   11 BC 05     AHOW:     LXI   D,HOW   
+05B9   C3 3E 0A               JMP   ERROR   
+05BC   48 4F 57 3F  HOW:      DB   "HOW?"   
+05C0   0D                     DB   CR   
+05C1   4F 4B        OK:       DB   "OK"   
+05C3   0D                     DB   CR   
+05C4   57 48 41 54 3F WHAT:   DB   "WHAT?"   
+05C9   0D                     DB   CR   
+05CA   53 4F 52 52 59 SORRY:   DB   "SORRY"   
+05CF   0D                     DB   CR   
+05D0                             ; 
+05D0                             ;*************************************************************
+05D0                             ; 
+05D0                             ; *** MAIN ***
+05D0                             ; 
+05D0                             ; THIS IS THE MAIN LOOP THAT COLLECTS THE TINY BASIC PROGRAM
+05D0                             ; AND STORES IT IN THE MEMORY.
+05D0                             ; 
+05D0                             ; AT START, IT PRINTS OUT "(CR)OK(CR)", AND INITIALIZES THE
+05D0                             ; STACK AND SOME OTHER INTERNAL VARIABLES.  THEN IT PROMPTS
+05D0                             ; ">" AND READS A LINE.  IF THE LINE STARTS WITH A NON-ZERO
+05D0                             ; NUMBER, THIS NUMBER IS THE LINE NUMBER.  THE LINE NUMBER
+05D0                             ; (IN 16 BIT BINARY) AND THE REST OF THE LINE (INCLUDING CR)
+05D0                             ; IS STORED IN THE MEMORY.  IF A LINE WITH THE SAME LINE
+05D0                             ; NUMBER IS ALREADY THERE, IT IS REPLACED BY THE NEW ONE.  IF
+05D0                             ; THE REST OF THE LINE CONSISTS OF A CR ONLY, IT IS NOT STORED
+05D0                             ; AND ANY EXISTING LINE WITH THE SAME LINE NUMBER IS DELETED.
+05D0                             ; 
+05D0                             ; AFTER A LINE IS INSERTED, REPLACED, OR DELETED, THE PROGRAM
+05D0                             ; LOOPS BACK AND ASKS FOR ANOTHER LINE.  THIS LOOP WILL BE
+05D0                             ; TERMINATED WHEN IT READS A LINE WITH ZERO OR NO LINE
+05D0                             ; NUMBER; AND CONTROL IS TRANSFERED TO "DIRECT".
+05D0                             ; 
+05D0                             ; TINY BASIC PROGRAM SAVE AREA STARTS AT THE MEMORY LOCATION
+05D0                             ; LABELED "TXTBGN" AND ENDS AT "TXTEND".  WE ALWAYS FILL THIS
+05D0                             ; AREA STARTING AT "TXTBGN", THE UNFILLED PORTION IS POINTED
+05D0                             ; BY THE CONTENT OF A MEMORY LOCATION LABELED "TXTUNF".
+05D0                             ; 
+05D0                             ; THE MEMORY LOCATION "CURRNT" POINTS TO THE LINE NUMBER
+05D0                             ; THAT IS CURRENTLY BEING INTERPRETED.  WHILE WE ARE IN
+05D0                             ; THIS LOOP OR WHILE WE ARE INTERPRETING A DIRECT COMMAND
+05D0                             ; (SEE NEXT SECTION). "CURRNT" SHOULD POINT TO A 0.
+05D0                             ; 
+05D0   31 FF FF     RSTART:   LXI   SP,STACK   
+05D3   CD 19 05     ST1:      CALL   CRLF   ;AND JUMP TO HERE
+05D6   11 C1 05               LXI   D,OK   ;DE->STRING
+05D9   97                     SUB   A   ;A=0
+05DA   CD DE 0A               CALL   PRTSTG   ;PRINT STRING UNTIL CR
+05DD   21 E4 05               LXI   H,ST2+1   ;LITERAL 0
+05E0   22 01 80               SHLD   CURRNT   ;CURRENT->LINE # = 0
+05E3   21 00 00     ST2:      LXI   H,0   
+05E6   22 09 80               SHLD   LOPVAR   
+05E9   22 03 80               SHLD   STKGOS   
+05EC   3E 3E        ST3:      MVI   A,3EH   ;PROMPT ">" AND
+05EE   CD 70 0A               CALL   GETLN   ;READ A LINE
+05F1   D5                     PUSH   D   ;DE->END OF LINE
+05F2   11 37 FC               LXI   D,BUFFER   ;DE->BEGINNING OF LINE
+05F5   CD 8B 05               CALL   TSTNUM   ;TEST IF IT IS A NUMBER
+05F8   CD 33 05               CALL   IGNBLK   
+05FB   7C                     MOV   A,H   ;HL=VALUE OF THE # OR
+05FC   B5                     ORA   L   ;0 IF NO # WAS FOUND
+05FD   C1                     POP   B   ;BC->END OF LINE
+05FE   CA D1 0C               JZ   DIRECT   
+0601   1B                     DCX   D   ;BACKUP DE AND SAVE
+0602   7C                     MOV   A,H   ;VALUE OF LINE # THERE
+0603   12                     STAX   D   
+0604   1B                     DCX   D   
+0605   7D                     MOV   A,L   
+0606   12                     STAX   D   
+0607   C5                     PUSH   B   ;BC,DE->BEGIN, END
+0608   D5                     PUSH   D   
+0609   79                     MOV   A,C   
+060A   93                     SUB   E   
+060B   F5                     PUSH   PSW   ;A=# OF BYTES IN LINE
+060C   CD B4 0A               CALL   FNDLN   ;FIND THIS LINE IN SAVE
+060F   D5                     PUSH   D   ;AREA, DE->SAVE AREA
+0610   C2 23 06               JNZ   ST4   ;NZ:NOT FOUND, INSERT
+0613   D5                     PUSH   D   ;Z:FOUND, DELETE IT
+0614   CD D2 0A               CALL   FNDNXT   ;FIND NEXT LINE
+0617                             ;DE->NEXT LINE
+0617   C1                     POP   B   ;BC->LINE TO BE DELETED
+0618   2A 15 80               LHLD   TXTUNF   ;HL->UNFILLED SAVE AREA
+061B   CD 75 0B               CALL   MVUP   ;MOVE UP TO DELETE
+061E   60                     MOV   H,B   ;TXTUNF->UNFILLED AREA
+061F   69                     MOV   L,C   
+0620   22 15 80               SHLD   TXTUNF   ;UPDATE
+0623   C1           ST4:      POP   B   ;GET READY TO INSERT
+0624   2A 15 80               LHLD   TXTUNF   ;BUT FIRST CHECK IF
+0627   F1                     POP   PSW   ;THE LENGTH OF NEW LINE
+0628   E5                     PUSH   H   ;IS 3 (LINE # AND CR)
+0629   FE 03                  CPI   3   ;THEN DO NOT INSERT
+062B   CA D0 05               JZ   RSTART   ;MUST CLEAR THE STACK
+062E   85                     ADD   L   ;COMPUTE NEW TXTUNF
+062F   6F                     MOV   L,A   
+0630   3E 00                  MVI   A,0   
+0632   8C                     ADC   H   
+0633   67                     MOV   H,A   ;HL->NEW UNFILLED AREA
+0634   11 00 FC               LXI   D,TXTEND   ;CHECK TO SEE IF THERE
+0637   CD 2B 05               CALL   COMP   ;IS ENOUGH SPACE
+063A   D2 69 0A               JNC   QSORRY   ;SORRY, NO ROOM FOR IT
+063D   22 15 80               SHLD   TXTUNF   ;OK, UPDATE TXTUNF
+0640   D1                     POP   D   ;DE->OLD UNFILLED AREA
+0641   CD 80 0B               CALL   MVDOWN   
+0644   D1                     POP   D   ;DE->BEGIN, HL->END
+0645   E1                     POP   H   
+0646   CD 75 0B               CALL   MVUP   ;MOVE NEW LINE TO SAVE
+0649   C3 EC 05               JMP   ST3   ;AREA
+064C                             ; 
+064C                             ;*************************************************************
+064C                             ; 
+064C                             ; WHAT FOLLOWS IS THE CODE TO EXECUTE DIRECT AND STATEMENT
+064C                             ; COMMANDS.  CONTROL IS TRANSFERED TO THESE POINTS VIA THE
+064C                             ; COMMAND TABLE LOOKUP CODE OF "DIRECT" AND "EXEC" IN LAST
+064C                             ; SECTION.  AFTER THE COMMAND IS EXECUTED, CONTROL IS
+064C                             ; TRANSFERED TO OTHERS SECTIONS AS FOLLOWS:
+064C                             ; 
+064C                             ; FOR "LIST", "NEW", AND "STOP": GO BACK TO "RSTART"
+064C                             ; FOR "RUN": GO EXECUTE THE FIRST STORED LINE IF ANY, ELSE
+064C                             ; GO BACK TO "RSTART".
+064C                             ; FOR "GOTO" AND "GOSUB": GO EXECUTE THE TARGET LINE.
+064C                             ; FOR "RETURN" AND "NEXT": GO BACK TO SAVED RETURN LINE.
+064C                             ; FOR ALL OTHERS: IF "CURRENT" -> 0, GO TO "RSTART", ELSE
+064C                             ; GO EXECUTE NEXT COMMAND.  (THIS IS DONE IN "FINISH".)
+064C                             ;*************************************************************
+064C                             ; 
+064C                             ; *** NEW *** STOP *** RUN (& FRIENDS) *** & GOTO ***
+064C                             ; 
+064C                             ; "NEW(CR)" SETS "TXTUNF" TO POINT TO "TXTBGN"
+064C                             ; 
+064C                             ; "STOP(CR)" GOES BACK TO "RSTART"
+064C                             ; 
+064C                             ; "RUN(CR)" FINDS THE FIRST STORED LINE, STORE ITS ADDRESS (IN
+064C                             ; "CURRENT"), AND START EXECUTE IT.  NOTE THAT ONLY THOSE
+064C                             ; COMMANDS IN TAB2 ARE LEGAL FOR STORED PROGRAM.
+064C                             ; 
+064C                             ; THERE ARE 3 MORE ENTRIES IN "RUN":
+064C                             ; "RUNNXL" FINDS NEXT LINE, STORES ITS ADDR. AND EXECUTES IT.
+064C                             ; "RUNTSL" STORES THE ADDRESS OF THIS LINE AND EXECUTES IT.
+064C                             ; "RUNSML" CONTINUES THE EXECUTION ON SAME LINE.
+064C                             ; 
+064C                             ; "GOTO EXPR(CR)" EVALUATES THE EXPRESSION, FIND THE TARGET
+064C                             ; LINE, AND JUMP TO "RUNTSL" TO DO IT.
+064C                             ; 
+064C   CD 34 0A     NEW:      CALL   ENDCHK   ;*** NEW(CR) ***
+064F   21 17 80               LXI   H,TXTBGN   
+0652   22 15 80               SHLD   TXTUNF   
+0655                             ; 
+0655   CD 34 0A     STOP:     CALL   ENDCHK   ;*** STOP(CR) ***
+0658   C3 D0 05               JMP   RSTART   
+065B   CD 34 0A     BYE:      CALL   ENDCHK   ;*** RUN(CR) ***
+065E   C7                     RST   0   
+065F                             ; 
+065F   CD 34 0A     RUN:      CALL   ENDCHK   ;*** RUN(CR) ***
+0662   11 17 80               LXI   D,TXTBGN   ;FIRST SAVED LINE
+0665                             ; 
+0665   21 00 00     RUNNXL:   LXI   H,0   ;*** RUNNXL ***
+0668   CD BC 0A               CALL   FNDLP   ;FIND WHATEVER LINE #
+066B   DA D0 05               JC   RSTART   ;C:PASSED TXTUNF, QUIT
+066E                             ; 
+066E   EB           RUNTSL:   XCHG      ;*** RUNTSL ***
+066F   22 01 80               SHLD   CURRNT   ;SET "CURRENT"->LINE #
+0672   EB                     XCHG      
+0673   13                     INX   D   ;BUMP PASS LINE #
+0674   13                     INX   D   
+0675                             ; 
+0675   CD 18 0C     RUNSML:   CALL   CHKIO   ;*** RUNSML ***
+0678   21 56 0C               LXI   H,TAB2-1   ;FIND COMMAND IN TAB2
+067B   C3 D4 0C               JMP   EXEC   ;AND EXECUTE IT
+067E                             ; 
+067E   CD 23 05     GOTO:     CALL   EXPR   ;*** GOTO EXPR ***
+0681   D5                     PUSH   D   ;SAVE FOR ERROR ROUTINE
+0682   CD 34 0A               CALL   ENDCHK   ;MUST FIND A CR
+0685   CD B4 0A               CALL   FNDLN   ;FIND THE TARGET LINE
+0688   C2 B6 05               JNZ   AHOW   ;NO SUCH LINE #
+068B   F1                     POP   PSW   ;CLEAR THE PUSH DE
+068C   C3 6E 06               JMP   RUNTSL   ;GO DO IT
+068F                             ; 
+068F                             ;*************************************************************
+068F                             ; 
+068F                             ; *** LIST *** & PRINT ***
+068F                             ; 
+068F                             ; LIST HAS TWO FORMS:
+068F                             ; "LIST(CR)" LISTS ALL SAVED LINES
+068F                             ; "LIST #(CR)" START LIST AT THIS LINE #
+068F                             ; YOU CAN STOP THE LISTING BY CONTROL C KEY
+068F                             ; 
+068F                             ; PRINT COMMAND IS "PRINT ....;" OR "PRINT ....(CR)"
+068F                             ; WHERE "...." IS A LIST OF EXPRESIONS, FORMATS, BACK-
+068F                             ; ARROWS, AND STRINGS.  THESE ITEMS ARE SEPERATED BY COMMAS.
+068F                             ; 
+068F                             ; A FORMAT IS A POUND SIGN FOLLOWED BY A NUMBER.  IT CONTROLS
+068F                             ; THE NUMBER OF SPACES THE VALUE OF A EXPRESION IS GOING TO
+068F                             ; BE PRINTED.  IT STAYS EFFECTIVE FOR THE REST OF THE PRINT
+068F                             ; COMMAND UNLESS CHANGED BY ANOTHER FORMAT.  IF NO FORMAT IS
+068F                             ; SPECIFIED, 6 POSITIONS WILL BE USED.
+068F                             ; 
+068F                             ; A STRING IS QUOTED IN A PAIR OF SINGLE QUOTES OR A PAIR OF
+068F                             ; DOUBLE QUOTES.
+068F                             ; 
+068F                             ; A BACK-ARROW MEANS GENERATE A (CR) WITHOUT (LF)
+068F                             ; 
+068F                             ; A (CRLF) IS GENERATED AFTER THE ENTIRE LIST HAS BEEN
+068F                             ; PRINTED OR IF THE LIST IS A NULL LIST.  HOWEVER IF THE LIST
+068F                             ; ENDED WITH A COMMA, NO (CRLF) IS GENERATED.
+068F                             ; 
+068F   CD 8B 05     LIST:     CALL   TSTNUM   ;TEST IF THERE IS A #
+0692   CD 34 0A               CALL   ENDCHK   ;IF NO # WE GET A 0
+0695   CD B4 0A               CALL   FNDLN   ;FIND THIS OR NEXT LINE
+0698   DA D0 05     LS1:      JC   RSTART   ;C:PASSED TXTUNF
+069B   CD 60 0B               CALL   PRTLN   ;PRINT THE LINE
+069E   CD 18 0C               CALL   CHKIO   ;STOP IF HIT CONTROL-C
+06A1   CD BC 0A               CALL   FNDLP   ;FIND NEXT LINE
+06A4   C3 98 06               JMP   LS1   ;AND LOOP BACK
+06A7                             ; 
+06A7   0E 06        PRINT:    MVI   C,6   ;C = # OF SPACES
+06A9   CD 77 05               CALL   TSTC   ;IF NULL LIST & ";"
+06AC   3B                     DB   3BH   
+06AD   06                     DB   PR2-$-1   
+06AE   CD 19 05               CALL   CRLF   ;GIVE CR-LF AND
+06B1   C3 75 06               JMP   RUNSML   ;CONTINUE SAME LINE
+06B4   CD 77 05     PR2:      CALL   TSTC   ;IF NULL LIST (CR)
+06B7   0D                     DB   CR   
+06B8   06                     DB   PR0-$-1   
+06B9   CD 19 05               CALL   CRLF   ;ALSO GIVE CR-LF AND
+06BC   C3 65 06               JMP   RUNNXL   ;GO TO NEXT LINE
+06BF   CD 77 05     PR0:      CALL   TSTC   ;ELSE IS IT FORMAT?
+06C2   23                     DB   "#"   
+06C3   07                     DB   PR1-$-1   
+06C4   CD 23 05               CALL   EXPR   ;YES, EVALUATE EXPR.
+06C7   4D                     MOV   C,L   ;AND SAVE IT IN C
+06C8   C3 D1 06               JMP   PR3   ;LOOK FOR MORE TO PRINT
+06CB   CD EC 0A     PR1:      CALL   QTSTG   ;OR IS IT A STRING?
+06CE   C3 E2 06               JMP   PR8   ;IF NOT, MUST BE EXPR.
+06D1   CD 77 05     PR3:      CALL   TSTC   ;IF ",", GO FIND NEXT
+06D4   2C                     DB   ","   
+06D5   06                     DB   PR6-$-1   
+06D6   CD 21 0A               CALL   FIN   ;IN THE LIST.
+06D9   C3 BF 06               JMP   PR0   ;LIST CONTINUES
+06DC   CD 19 05     PR6:      CALL   CRLF   ;LIST ENDS
+06DF   CD 3B 05               CALL   FINISH   
+06E2   CD 23 05     PR8:      CALL   EXPR   ;EVALUATE THE EXPR
+06E5   C5                     PUSH   B   
+06E6   CD 1C 0B               CALL   PRTNUM   ;PRINT THE VALUE
+06E9   C1                     POP   B   
+06EA   C3 D1 06               JMP   PR3   ;MORE TO PRINT?
+06ED                             ; 
+06ED                             ;*************************************************************
+06ED                             ; 
+06ED                             ; *** GOSUB *** & RETURN ***
+06ED                             ; 
+06ED                             ; "GOSUB EXPR;" OR "GOSUB EXPR (CR)" IS LIKE THE "GOTO"
+06ED                             ; COMMAND, EXCEPT THAT THE CURRENT TEXT POINTER, STACK POINTER
+06ED                             ; ETC. ARE SAVE SO THAT EXECUTION CAN BE CONTINUED AFTER THE
+06ED                             ; SUBROUTINE "RETURN".  IN ORDER THAT "GOSUB" CAN BE NESTED
+06ED                             ; (AND EVEN RECURSIVE), THE SAVE AREA MUST BE STACKED.
+06ED                             ; THE STACK POINTER IS SAVED IN "STKGOS", THE OLD "STKGOS" IS
+06ED                             ; SAVED IN THE STACK.  IF WE ARE IN THE MAIN ROUTINE, "STKGOS"
+06ED                             ; IS ZERO (THIS WAS DONE BY THE "MAIN" SECTION OF THE CODE),
+06ED                             ; BUT WE STILL SAVE IT AS A FLAG FOR NO FURTHER "RETURN"S.
+06ED                             ; 
+06ED                             ; "RETURN(CR)" UNDOS EVERYTHING THAT "GOSUB" DID, AND THUS
+06ED                             ; RETURN THE EXECUTION TO THE COMMAND AFTER THE MOST RECENT
+06ED                             ; "GOSUB".  IF "STKGOS" IS ZERO, IT INDICATES THAT WE
+06ED                             ; NEVER HAD A "GOSUB" AND IS THUS AN ERROR.
+06ED                             ; 
+06ED   CD AB 0B     GOSUB:    CALL   PUSHA   ;SAVE THE CURRENT "FOR"
+06F0   CD 23 05               CALL   EXPR   ;PARAMETERS
+06F3   D5                     PUSH   D   ;AND TEXT POINTER
+06F4   CD B4 0A               CALL   FNDLN   ;FIND THE TARGET LINE
+06F7   C2 B6 05               JNZ   AHOW   ;NOT THERE. SAY "HOW?"
+06FA   2A 01 80               LHLD   CURRNT   ;FOUND IT, SAVE OLD
+06FD   E5                     PUSH   H   ;"CURRNT" OLD "STKGOS"
+06FE   2A 03 80               LHLD   STKGOS   
+0701   E5                     PUSH   H   
+0702   21 00 00               LXI   H,0   ;AND LOAD NEW ONES
+0705   22 09 80               SHLD   LOPVAR   
+0708   39                     DAD   SP   
+0709   22 03 80               SHLD   STKGOS   
+070C   C3 6E 06               JMP   RUNTSL   ;THEN RUN THAT LINE
+070F   CD 34 0A     RETURN:   CALL   ENDCHK   ;THERE MUST BE A CR
+0712   2A 03 80               LHLD   STKGOS   ;OLD STACK POINTER
+0715   7C                     MOV   A,H   ;0 MEANS NOT EXIST
+0716   B5                     ORA   L   
+0717   CA 3A 0A               JZ   QWHAT   ;SO, WE SAY: "WHAT?"
+071A   F9                     SPHL      ;ELSE, RESTORE IT
+071B   E1                     POP   H   
+071C   22 03 80               SHLD   STKGOS   ;AND THE OLD "STKGOS"
+071F   E1                     POP   H   
+0720   22 01 80               SHLD   CURRNT   ;AND THE OLD "CURRNT"
+0723   D1                     POP   D   ;OLD TEXT POINTER
+0724   CD 8F 0B               CALL   POPA   ;OLD "FOR" PARAMETERS
+0727   CD 3B 05               CALL   FINISH   ;AND WE ARE BACK HOME
+072A                             ; 
+072A                             ;*************************************************************
+072A                             ; 
+072A                             ; *** FOR *** & NEXT ***
+072A                             ; 
+072A                             ; "FOR" HAS TWO FORMS:
+072A                             ; "FOR VAR=EXP1 TO EXP2 STEP EXP3" AND "FOR VAR=EXP1 TO EXP2"
+072A                             ; THE SECOND FORM MEANS THE SAME THING AS THE FIRST FORM WITH
+072A                             ; EXP3=1.  (I.E., WITH A STEP OF +1.)
+072A                             ; TBI WILL FIND THE VARIABLE VAR, AND SET ITS VALUE TO THE
+072A                             ; CURRENT VALUE OF EXP1.  IT ALSO EVALUATES EXP2 AND EXP3
+072A                             ; AND SAVE ALL THESE TOGETHER WITH THE TEXT POINTER ETC. IN
+072A                             ; THE "FOR" SAVE AREA, WHICH CONSISTS OF "LOPVAR", "LOPINC",
+072A                             ; "LOPLMT", "LOPLN", AND "LOPPT".  IF THERE IS ALREADY SOME-
+072A                             ; THING IN THE SAVE AREA (THIS IS INDICATED BY A NON-ZERO
+072A                             ; "LOPVAR"), THEN THE OLD SAVE AREA IS SAVED IN THE STACK
+072A                             ; BEFORE THE NEW ONE OVERWRITES IT.
+072A                             ; TBI WILL THEN DIG IN THE STACK AND FIND OUT IF THIS SAME
+072A                             ; VARIABLE WAS USED IN ANOTHER CURRENTLY ACTIVE "FOR" LOOP.
+072A                             ; IF THAT IS THE CASE, THEN THE OLD "FOR" LOOP IS DEACTIVATED.
+072A                             ; (PURGED FROM THE STACK..)
+072A                             ; 
+072A                             ; "NEXT VAR" SERVES AS THE LOGICAL (NOT NECESSARILLY PHYSICAL)
+072A                             ; END OF THE "FOR" LOOP.  THE CONTROL VARIABLE VAR. IS CHECKED
+072A                             ; WITH THE "LOPVAR".  IF THEY ARE NOT THE SAME, TBI DIGS IN
+072A                             ; THE STACK TO FIND THE RIGHT ONE AND PURGES ALL THOSE THAT
+072A                             ; DID NOT MATCH.  EITHER WAY, TBI THEN ADDS THE "STEP" TO
+072A                             ; THAT VARIABLE AND CHECK THE RESULT WITH THE LIMIT.  IF IT
+072A                             ; IS WITHIN THE LIMIT, CONTROL LOOPS BACK TO THE COMMAND
+072A                             ; FOLLOWING THE "FOR".  IF OUTSIDE THE LIMIT, THE SAVE AREA
+072A                             ; IS PURGED AND EXECUTION CONTINUES.
+072A                             ; 
+072A   CD AB 0B     FOR:      CALL   PUSHA   ;SAVE THE OLD SAVE AREA
+072D   CD 08 0A               CALL   SETVAL   ;SET THE CONTROL VAR.
+0730   2B                     DCX   H   ;HL IS ITS ADDRESS
+0731   22 09 80               SHLD   LOPVAR   ;SAVE THAT
+0734   21 AC 0C               LXI   H,TAB5-1   ;USE "EXEC" TO LOOK
+0737   C3 D4 0C               JMP   EXEC   ;FOR THE WORD "TO"
+073A   CD 23 05     FR1:      CALL   EXPR   ;EVALUATE THE LIMIT
+073D   22 0D 80               SHLD   LOPLMT   ;SAVE THAT
+0740   21 B2 0C               LXI   H,TAB6-1   ;USE "EXEC" TO LOOK
+0743   C3 D4 0C               JMP   EXEC   ;FOR THE WORD "STEP"
+0746   CD 23 05     FR2:      CALL   EXPR   ;FOUND IT, GET STEP
+0749   C3 4F 07               JMP   FR4   
+074C   21 01 00     FR3:      LXI   H,1H   ;NOT FOUND, SET TO 1
+074F   22 0B 80     FR4:      SHLD   LOPINC   ;SAVE THAT TOO
+0752   2A 01 80     FR5:      LHLD   CURRNT   ;SAVE CURRENT LINE #
+0755   22 0F 80               SHLD   LOPLN   
+0758   EB                     XCHG      ;AND TEXT POINTER
+0759   22 11 80               SHLD   LOPPT   
+075C   01 0A 00               LXI   B,0AH   ;DIG INTO STACK TO
+075F   2A 09 80               LHLD   LOPVAR   ;FIND "LOPVAR"
+0762   EB                     XCHG      
+0763   60                     MOV   H,B   
+0764   68                     MOV   L,B   ;HL=0 NOW
+0765   39                     DAD   SP   ;HERE IS THE STACK
+0766   3E                     DB   3EH   
+0767   09           FR7:      DAD   B   ;EACH LEVEL IS 10 DEEP
+0768   7E                     MOV   A,M   ;GET THAT OLD "LOPVAR"
+0769   23                     INX   H   
+076A   B6                     ORA   M   
+076B   CA 88 07               JZ   FR8   ;0 SAYS NO MORE IN IT
+076E   7E                     MOV   A,M   
+076F   2B                     DCX   H   
+0770   BA                     CMP   D   ;SAME AS THIS ONE?
+0771   C2 67 07               JNZ   FR7   
+0774   7E                     MOV   A,M   ;THE OTHER HALF?
+0775   BB                     CMP   E   
+0776   C2 67 07               JNZ   FR7   
+0779   EB                     XCHG      ;YES, FOUND ONE
+077A   21 00 00               LXI   H,0H   
+077D   39                     DAD   SP   ;TRY TO MOVE SP
+077E   44                     MOV   B,H   
+077F   4D                     MOV   C,L   
+0780   21 0A 00               LXI   H,0AH   
+0783   19                     DAD   D   
+0784   CD 80 0B               CALL   MVDOWN   ;AND PURGE 10 WORDS
+0787   F9                     SPHL      ;IN THE STACK
+0788   2A 11 80     FR8:      LHLD   LOPPT   ;JOB DONE, RESTORE DE
+078B   EB                     XCHG      
+078C   CD 3B 05               CALL   FINISH   ;AND CONTINUE
+078F                             ; 
+078F   CD 43 05     NEXT:     CALL   TSTV   ;GET ADDRESS OF VAR.
+0792   DA 3A 0A               JC   QWHAT   ;NO VARIABLE, "WHAT?"
+0795   22 05 80               SHLD   VARNXT   ;YES, SAVE IT
+0798   D5           NX0:      PUSH   D   ;SAVE TEXT POINTER
+0799   EB                     XCHG      
+079A   2A 09 80               LHLD   LOPVAR   ;GET VAR. IN "FOR"
+079D   7C                     MOV   A,H   
+079E   B5                     ORA   L   ;0 SAYS NEVER HAD ONE
+079F   CA 3B 0A               JZ   AWHAT   ;SO WE ASK: "WHAT?"
+07A2   CD 2B 05               CALL   COMP   ;ELSE WE CHECK THEM
+07A5   CA B2 07               JZ   NX3   ;OK, THEY AGREE
+07A8   D1                     POP   D   ;NO, LET'S SEE
+07A9   CD 8F 0B               CALL   POPA   ;PURGE CURRENT LOOP
+07AC   2A 05 80               LHLD   VARNXT   ;AND POP ONE LEVEL
+07AF   C3 98 07               JMP   NX0   ;GO CHECK AGAIN
+07B2   5E           NX3:      MOV   E,M   ;COME HERE WHEN AGREED
+07B3   23                     INX   H   
+07B4   56                     MOV   D,M   ;DE=VALUE OF VAR.
+07B5   2A 0B 80               LHLD   LOPINC   
+07B8   E5                     PUSH   H   
+07B9   7C                     MOV   A,H   
+07BA   AA                     XRA   D   
+07BB   7A                     MOV   A,D   
+07BC   19                     DAD   D   ;ADD ONE STEP
+07BD   FA C4 07               JM   NX4   
+07C0   AC                     XRA   H   
+07C1   FA E8 07               JM   NX5   
+07C4   EB           NX4:      XCHG      
+07C5   2A 09 80               LHLD   LOPVAR   ;PUT IT BACK
+07C8   73                     MOV   M,E   
+07C9   23                     INX   H   
+07CA   72                     MOV   M,D   
+07CB   2A 0D 80               LHLD   LOPLMT   ;HL->LIMIT
+07CE   F1                     POP   PSW   ;OLD HL
+07CF   B7                     ORA   A   
+07D0   F2 D4 07               JP   NX1   ;STEP > 0
+07D3   EB                     XCHG      ;STEP < 0
+07D4   CD FE 09     NX1:      CALL   CKHLDE   ;COMPARE WITH LIMIT
+07D7   D1                     POP   D   ;RESTORE TEXT POINTER
+07D8   DA EA 07               JC   NX2   ;OUTSIDE LIMIT
+07DB   2A 0F 80               LHLD   LOPLN   ;WITHIN LIMIT, GO
+07DE   22 01 80               SHLD   CURRNT   ;BACK TO THE SAVED
+07E1   2A 11 80               LHLD   LOPPT   ;"CURRNT" AND TEXT
+07E4   EB                     XCHG      ;POINTER
+07E5   CD 3B 05               CALL   FINISH   
+07E8   E1           NX5:      POP   H   
+07E9   D1                     POP   D   
+07EA   CD 8F 0B     NX2:      CALL   POPA   ;PURGE THIS LOOP
+07ED   CD 3B 05               CALL   FINISH   
+07F0                             ; 
+07F0                             ;*************************************************************
+07F0                             ; 
+07F0                             ; *** REM *** IF *** INPUT *** & LET (& DEFLT) ***
+07F0                             ; 
+07F0                             ; "REM" CAN BE FOLLOWED BY ANYTHING AND IS IGNORED BY TBI.
+07F0                             ; TBI TREATS IT LIKE AN "IF" WITH A FALSE CONDITION.
+07F0                             ; 
+07F0                             ; "IF" IS FOLLOWED BY AN EXPR. AS A CONDITION AND ONE OR MORE
+07F0                             ; COMMANDS (INCLUDING OTHER "IF"S) SEPERATED BY SEMI-COLONS.
+07F0                             ; NOTE THAT THE WORD "THEN" IS NOT USED.  TBI EVALUATES THE
+07F0                             ; EXPR. IF IT IS NON-ZERO, EXECUTION CONTINUES.  IF THE
+07F0                             ; EXPR. IS ZERO, THE COMMANDS THAT FOLLOWS ARE IGNORED AND
+07F0                             ; EXECUTION CONTINUES AT THE NEXT LINE.
+07F0                             ; 
+07F0                             ; "INPUT" COMMAND IS LIKE THE "PRINT" COMMAND, AND IS FOLLOWED
+07F0                             ; BY A LIST OF ITEMS.  IF THE ITEM IS A STRING IN SINGLE OR
+07F0                             ; DOUBLE QUOTES, OR IS A BACK-ARROW, IT HAS THE SAME EFFECT AS
+07F0                             ; IN "PRINT".  IF AN ITEM IS A VARIABLE, THIS VARIABLE NAME IS
+07F0                             ; PRINTED OUT FOLLOWED BY A COLON.  THEN TBI WAITS FOR AN
+07F0                             ; EXPR. TO BE TYPED IN.  THE VARIABLE IS THEN SET TO THE
+07F0                             ; VALUE OF THIS EXPR.  IF THE VARIABLE IS PROCEDED BY A STRING
+07F0                             ; (AGAIN IN SINGLE OR DOUBLE QUOTES), THE STRING WILL BE
+07F0                             ; PRINTED FOLLOWED BY A COLON.  TBI THEN WAITS FOR INPUT EXPR.
+07F0                             ; AND SET THE VARIABLE TO THE VALUE OF THE EXPR.
+07F0                             ; 
+07F0                             ; IF THE INPUT EXPR. IS INVALID, TBI WILL PRINT "WHAT?",
+07F0                             ; "HOW?" OR "SORRY" AND REPRINT THE PROMPT AND REDO THE INPUT.
+07F0                             ; THE EXECUTION WILL NOT TERMINATE UNLESS YOU TYPE CONTROL-C.
+07F0                             ; THIS IS HANDLED IN "INPERR".
+07F0                             ; 
+07F0                             ; "LET" IS FOLLOWED BY A LIST OF ITEMS SEPERATED BY COMMAS.
+07F0                             ; EACH ITEM CONSISTS OF A VARIABLE, AN EQUAL SIGN, AND AN EXPR.
+07F0                             ; TBI EVALUATES THE EXPR. AND SET THE VARIABLE TO THAT VALUE.
+07F0                             ; TBI WILL ALSO HANDLE "LET" COMMAND WITHOUT THE WORD "LET".
+07F0                             ; THIS IS DONE BY "DEFLT".
+07F0                             ; 
+07F0   21 00 00     REM:      LXI   H,0H   ;*** REM ***
+07F3   3E                     DB   3EH   ;THIS IS LIKE "IF 0"
+07F4                             ; 
+07F4   CD 23 05     IFF:      CALL   EXPR   ;*** IF ***
+07F7   7C                     MOV   A,H   ;IS THE EXPR.=0?
+07F8   B5                     ORA   L   
+07F9   C2 75 06               JNZ   RUNSML   ;NO, CONTINUE
+07FC   CD D4 0A               CALL   FNDSKP   ;YES, SKIP REST OF LINE
+07FF   D2 6E 06               JNC   RUNTSL   ;AND RUN THE NEXT LINE
+0802   C3 D0 05               JMP   RSTART   ;IF NO NEXT, RE-START
+0805                             ; 
+0805   2A 07 80     INPERR:   LHLD   STKINP   ;*** INPERR ***
+0808   F9                     SPHL      ;RESTORE OLD SP
+0809   E1                     POP   H   ;AND OLD "CURRNT"
+080A   22 01 80               SHLD   CURRNT   
+080D   D1                     POP   D   ;AND OLD TEXT POINTER
+080E   D1                     POP   D   ;REDO INPUT
+080F                             ; 
+080F                INPUT:       ;*** INPUT ***
+080F   D5           IP1:      PUSH   D   ;SAVE IN CASE OF ERROR
+0810   CD EC 0A               CALL   QTSTG   ;IS NEXT ITEM A STRING?
+0813   C3 1F 08               JMP   IP2   ;NO
+0816   CD 43 05               CALL   TSTV   ;YES, BUT FOLLOWED BY A
+0819   DA 5D 08               JC   IP4   ;VARIABLE?   NO.
+081C   C3 31 08               JMP   IP3   ;YES.  INPUT VARIABLE
+081F   D5           IP2:      PUSH   D   ;SAVE FOR "PRTSTG"
+0820   CD 43 05               CALL   TSTV   ;MUST BE VARIABLE NOW
+0823   DA 3A 0A               JC   QWHAT   ;"WHAT?" IT IS NOT?
+0826   1A                     LDAX   D   ;GET READY FOR "PRTSTR"
+0827   4F                     MOV   C,A   
+0828   97                     SUB   A   
+0829   12                     STAX   D   
+082A   D1                     POP   D   
+082B   CD DE 0A               CALL   PRTSTG   ;PRINT STRING AS PROMPT
+082E   79                     MOV   A,C   ;RESTORE TEXT
+082F   1B                     DCX   D   
+0830   12                     STAX   D   
+0831   D5           IP3:      PUSH   D   ;SAVE TEXT POINTER
+0832   EB                     XCHG      
+0833   2A 01 80               LHLD   CURRNT   ;ALSO SAVE "CURRNT"
+0836   E5                     PUSH   H   
+0837   21 0F 08               LXI   H,IP1   ;A NEGATIVE NUMBER
+083A   22 01 80               SHLD   CURRNT   ;AS A FLAG
+083D   21 00 00               LXI   H,0H   ;SAVE SP TOO
+0840   39                     DAD   SP   
+0841   22 07 80               SHLD   STKINP   
+0844   D5                     PUSH   D   ;OLD HL
+0845   3E 3A                  MVI   A,3AH   ;PRINT THIS TOO
+0847   CD 70 0A               CALL   GETLN   ;AND GET A LINE
+084A   11 37 FC               LXI   D,BUFFER   ;POINTS TO BUFFER
+084D   CD 23 05               CALL   EXPR   ;EVALUATE INPUT
+0850   00                     NOP      ;CAN BE "CALL ENDCHK"
+0851   00                     NOP      
+0852   00                     NOP      
+0853   D1                     POP   D   ;OK, GET OLD HL
+0854   EB                     XCHG      
+0855   73                     MOV   M,E   ;SAVE VALUE IN VAR.
+0856   23                     INX   H   
+0857   72                     MOV   M,D   
+0858   E1                     POP   H   ;GET OLD "CURRNT"
+0859   22 01 80               SHLD   CURRNT   
+085C   D1                     POP   D   ;AND OLD TEXT POINTER
+085D   F1           IP4:      POP   PSW   ;PURGE JUNK IN STACK
+085E   CD 77 05               CALL   TSTC   ;IS NEXT CH. ","?
+0861   2C                     DB   ","   
+0862   03                     DB   IP5-$-1   
+0863   C3 0F 08               JMP   IP1   ;YES, MORE ITEMS.
+0866   CD 3B 05     IP5:      CALL   FINISH   
+0869                             ; 
+0869   1A           DEFLT:    LDAX   D   ;***  DEFLT ***
+086A   FE 0D                  CPI   CR   ;EMPTY LINE IS OK
+086C   CA 7A 08               JZ   LT1   ;ELSE IT IS "LET"
+086F                             ; 
+086F   CD 08 0A     LET:      CALL   SETVAL   ;*** LET ***
+0872   CD 77 05               CALL   TSTC   ;SET VALUE TO VAR.
+0875   2C                     DB   ","   
+0876   03                     DB   LT1-$-1   
+0877   C3 6F 08               JMP   LET   ;ITEM BY ITEM
+087A   CD 3B 05     LT1:      CALL   FINISH   ;UNTIL FINISH
+087D                             ; 
+087D                             ;*************************************************************
+087D                             ; 
+087D                             ; *** EXPR ***
+087D                             ; 
+087D                             ; "EXPR" EVALUATES ARITHMETICAL OR LOGICAL EXPRESSIONS.
+087D                             ; <EXPR>::<EXPR2>
+087D                             ;         <EXPR2><REL.OP.><EXPR2>
+087D                             ; WHERE <REL.OP.> IS ONE OF THE OPERATORS IN TAB8 AND THE
+087D                             ; RESULT OF THESE OPERATIONS IS 1 IF TRUE AND 0 IF FALSE.
+087D                             ; <EXPR2>::=(+ OR -)<EXPR3>(+ OR -<EXPR3>)(....)
+087D                             ; WHERE () ARE OPTIONAL AND (....) ARE OPTIONAL REPEATS.
+087D                             ; <EXPR3>::=<EXPR4>(* OR /><EXPR4>)(....)
+087D                             ; <EXPR4>::=<VARIABLE>
+087D                             ;           <FUNCTION>
+087D                             ;           (<EXPR>)
+087D                             ; <EXPR> IS RECURSIVE SO THAT VARIABLE "@" CAN HAVE AN <EXPR>
+087D                             ; AS INDEX, FUNCTIONS CAN HAVE AN <EXPR> AS ARGUMENTS, AND
+087D                             ; <EXPR4> CAN BE AN <EXPR> IN PARANTHESE.
+087D                             ; 
+087D                             ;EXPR:  CALL EXPR2                      ;THIS IS AT LOC. 18
+087D                             ;       PUSH H                          ;SAVE <EXPR2> VALUE
+087D   21 BA 0C     EXPR1:    LXI   H,TAB8-1   ;LOOKUP REL.OP.
+0880   C3 D4 0C               JMP   EXEC   ;GO DO IT
+0883   CD AC 08     XP11:     CALL   XP18   ;REL.OP.">="
+0886   D8                     RC      ;NO, RETURN HL=0
+0887   6F                     MOV   L,A   ;YES, RETURN HL=1
+0888   C9                     RET      
+0889   CD AC 08     XP12:     CALL   XP18   ;REL.OP."#"
+088C   C8                     RZ      ;FALSE, RETURN HL=0
+088D   6F                     MOV   L,A   ;TRUE, RETURN HL=1
+088E   C9                     RET      
+088F   CD AC 08     XP13:     CALL   XP18   ;REL.OP.">"
+0892   C8                     RZ      ;FALSE
+0893   D8                     RC      ;ALSO FALSE, HL=0
+0894   6F                     MOV   L,A   ;TRUE, HL=1
+0895   C9                     RET      
+0896   CD AC 08     XP14:     CALL   XP18   ;REL.OP."<="
+0899   6F                     MOV   L,A   ;SET HL=1
+089A   C8                     RZ      ;REL. TRUE, RETURN
+089B   D8                     RC      
+089C   6C                     MOV   L,H   ;ELSE SET HL=0
+089D   C9                     RET      
+089E   CD AC 08     XP15:     CALL   XP18   ;REL.OP."="
+08A1   C0                     RNZ      ;FALSE, RETURN HL=0
+08A2   6F                     MOV   L,A   ;ELSE SET HL=1
+08A3   C9                     RET      
+08A4   CD AC 08     XP16:     CALL   XP18   ;REL.OP."<"
+08A7   D0                     RNC      ;FALSE, RETURN HL=0
+08A8   6F                     MOV   L,A   ;ELSE SET HL=1
+08A9   C9                     RET      
+08AA   E1           XP17:     POP   H   ;NOT .REL.OP
+08AB   C9                     RET      ;RETURN HL=<EXPR2>
+08AC   79           XP18:     MOV   A,C   ;SUBROUTINE FOR ALL
+08AD   E1                     POP   H   ;REL.OP.'S
+08AE   C1                     POP   B   
+08AF   E5                     PUSH   H   ;REVERSE TOP OF STACK
+08B0   C5                     PUSH   B   
+08B1   4F                     MOV   C,A   
+08B2   CD C1 08               CALL   EXPR2   ;GET 2ND <EXPR2>
+08B5   EB                     XCHG      ;VALUE IN DE NOW
+08B6   E3                     XTHL      ;1ST <EXPR2> IN HL
+08B7   CD FE 09               CALL   CKHLDE   ;COMPARE 1ST WITH 2ND
+08BA   D1                     POP   D   ;RESTORE TEXT POINTER
+08BB   21 00 00               LXI   H,0H   ;SET HL=0, A=1
+08BE   3E 01                  MVI   A,1   
+08C0   C9                     RET      
+08C1                             ; 
+08C1   CD 77 05     EXPR2:    CALL   TSTC   ;NEGATIVE SIGN?
+08C4   2D                     DB   "-"   
+08C5   06                     DB   XP21-$-1   
+08C6   21 00 00               LXI   H,0H   ;YES, FAKE "0-"
+08C9   C3 F3 08               JMP   XP26   ;TREAT LIKE SUBTRACT
+08CC   CD 77 05     XP21:     CALL   TSTC   ;POSITIVE SIGN? IGNORE
+08CF   2B                     DB   "+"   
+08D0   00                     DB   XP22-$-1   
+08D1   CD FD 08     XP22:     CALL   EXPR3   ;1ST <EXPR3>
+08D4   CD 77 05     XP23:     CALL   TSTC   ;ADD?
+08D7   2B                     DB   "+"   
+08D8   15                     DB   XP25-$-1   
+08D9   E5                     PUSH   H   ;YES, SAVE VALUE
+08DA   CD FD 08               CALL   EXPR3   ;GET 2ND <EXPR3>
+08DD   EB           XP24:     XCHG      ;2ND IN DE
+08DE   E3                     XTHL      ;1ST IN HL
+08DF   7C                     MOV   A,H   ;COMPARE SIGN
+08E0   AA                     XRA   D   
+08E1   7A                     MOV   A,D   
+08E2   19                     DAD   D   
+08E3   D1                     POP   D   ;RESTORE TEXT POINTER
+08E4   FA D4 08               JM   XP23   ;1ST AND 2ND SIGN DIFFER
+08E7   AC                     XRA   H   ;1ST AND 2ND SIGN EQUAL
+08E8   F2 D4 08               JP   XP23   ;SO IS RESULT
+08EB   C3 B5 05               JMP   QHOW   ;ELSE WE HAVE OVERFLOW
+08EE   CD 77 05     XP25:     CALL   TSTC   ;SUBTRACT?
+08F1   2D                     DB   "-"   
+08F2   92                     DB   XP42-$-1   
+08F3   E5           XP26:     PUSH   H   ;YES, SAVE 1ST <EXPR3>
+08F4   CD FD 08               CALL   EXPR3   ;GET 2ND <EXPR3>
+08F7   CD EC 09               CALL   CHGSGN   ;NEGATE
+08FA   C3 DD 08               JMP   XP24   ;AND ADD THEM
+08FD                             ; 
+08FD   CD 61 09     EXPR3:    CALL   EXPR4   ;GET 1ST <EXPR4>
+0900   CD 77 05     XP31:     CALL   TSTC   ;MULTIPLY?
+0903   2A                     DB   "*"   
+0904   2D                     DB   XP34-$-1   
+0905   E5                     PUSH   H   ;YES, SAVE 1ST
+0906   CD 61 09               CALL   EXPR4   ;AND GET 2ND <EXPR4>
+0909   06 00                  MVI   B,0H   ;CLEAR B FOR SIGN
+090B   CD E9 09               CALL   CHKSGN   ;CHECK SIGN
+090E   E3                     XTHL      ;1ST IN HL
+090F   CD E9 09               CALL   CHKSGN   ;CHECK SIGN OF 1ST
+0912   EB                     XCHG      
+0913   E3                     XTHL      
+0914   7C                     MOV   A,H   ;IS HL > 255 ?
+0915   B7                     ORA   A   
+0916   CA 1F 09               JZ   XP32   ;NO
+0919   7A                     MOV   A,D   ;YES, HOW ABOUT DE
+091A   B2                     ORA   D   
+091B   EB                     XCHG      ;PUT SMALLER IN HL
+091C   C2 B6 05               JNZ   AHOW   ;ALSO >, WILL OVERFLOW
+091F   7D           XP32:     MOV   A,L   ;THIS IS DUMB
+0920   21 00 00               LXI   H,0H   ;CLEAR RESULT
+0923   B7                     ORA   A   ;ADD AND COUNT
+0924   CA 53 09               JZ   XP35   
+0927   19           XP33:     DAD   D   
+0928   DA B6 05               JC   AHOW   ;OVERFLOW
+092B   3D                     DCR   A   
+092C   C2 27 09               JNZ   XP33   
+092F   C3 53 09               JMP   XP35   ;FINISHED
+0932   CD 77 05     XP34:     CALL   TSTC   ;DIVIDE?
+0935   2F                     DB   "/"   
+0936   4E                     DB   XP42-$-1   
+0937   E5                     PUSH   H   ;YES, SAVE 1ST <EXPR4>
+0938   CD 61 09               CALL   EXPR4   ;AND GET THE SECOND ONE
+093B   06 00                  MVI   B,0H   ;CLEAR B FOR SIGN
+093D   CD E9 09               CALL   CHKSGN   ;CHECK SIGN OF 2ND
+0940   E3                     XTHL      ;GET 1ST IN HL
+0941   CD E9 09               CALL   CHKSGN   ;CHECK SIGN OF 1ST
+0944   EB                     XCHG      
+0945   E3                     XTHL      
+0946   EB                     XCHG      
+0947   7A                     MOV   A,D   ;DIVIDE BY 0?
+0948   B3                     ORA   E   
+0949   CA B6 05               JZ   AHOW   ;SAY "HOW?"
+094C   C5                     PUSH   B   ;ELSE SAVE SIGN
+094D   CD CC 09               CALL   DIVIDE   ;USE SUBROUTINE
+0950   60                     MOV   H,B   ;RESULT IN HL NOW
+0951   69                     MOV   L,C   
+0952   C1                     POP   B   ;GET SIGN BACK
+0953   D1           XP35:     POP   D   ;AND TEXT POINTER
+0954   7C                     MOV   A,H   ;HL MUST BE +
+0955   B7                     ORA   A   
+0956   FA B5 05               JM   QHOW   ;ELSE IT IS OVERFLOW
+0959   78                     MOV   A,B   
+095A   B7                     ORA   A   
+095B   FC EC 09               CM   CHGSGN   ;CHANGE SIGN IF NEEDED
+095E   C3 00 09               JMP   XP31   ;LOOK FOR MORE TERMS
+0961                             ; 
+0961   21 9A 0C     EXPR4:    LXI   H,TAB4-1   ;FIND FUNCTION IN TAB4
+0964   C3 D4 0C               JMP   EXEC   ;AND GO DO IT
+0967   CD 43 05     XP40:     CALL   TSTV   ;NO, NOT A FUNCTION
+096A   DA 72 09               JC   XP41   ;NOR A VARIABLE
+096D   7E                     MOV   A,M   ;VARIABLE
+096E   23                     INX   H   
+096F   66                     MOV   H,M   ;VALUE IN HL
+0970   6F                     MOV   L,A   
+0971   C9                     RET      
+0972   CD 8B 05     XP41:     CALL   TSTNUM   ;OR IS IT A NUMBER
+0975   78                     MOV   A,B   ;# OF DIGIT
+0976   B7                     ORA   A   
+0977   C0                     RNZ      ;OK
+0978   CD 77 05     PARN:     CALL   TSTC   
+097B   28                     DB   "("   
+097C   09                     DB   XP43-$-1   
+097D   CD 23 05               CALL   EXPR   ;"(EXPR)"
+0980   CD 77 05               CALL   TSTC   
+0983   29                     DB   ")"   
+0984   01                     DB   XP43-$-1   
+0985   C9           XP42:     RET      
+0986   C3 3A 0A     XP43:     JMP   QWHAT   ;ELSE SAY: "WHAT?"
+0989                             ; 
+0989   CD 78 09     RND:      CALL   PARN   ;*** RND(EXPR) ***
+098C   7C                     MOV   A,H   ;EXPR MUST BE +
+098D   B7                     ORA   A   
+098E   FA B5 05               JM   QHOW   
+0991   B5                     ORA   L   ;AND NON-ZERO
+0992   CA B5 05               JZ   QHOW   
+0995   D5                     PUSH   D   ;SAVE BOTH
+0996   E5                     PUSH   H   
+0997   2A 13 80               LHLD   RANPNT   ;GET MEMORY AS RANDOM
+099A   11 04 0D               LXI   D,LSTROM   ;NUMBER
+099D   CD 2B 05               CALL   COMP   
+09A0   DA A6 09               JC   RA1   ;WRAP AROUND IF LAST
+09A3   21 11 05               LXI   H,START   
+09A6   5E           RA1:      MOV   E,M   
+09A7   23                     INX   H   
+09A8   56                     MOV   D,M   
+09A9   22 13 80               SHLD   RANPNT   
+09AC   E1                     POP   H   
+09AD   EB                     XCHG      
+09AE   C5                     PUSH   B   
+09AF   CD CC 09               CALL   DIVIDE   ;RND(N)=MOD(M,N)+1
+09B2   C1                     POP   B   
+09B3   D1                     POP   D   
+09B4   23                     INX   H   
+09B5   C9                     RET      
+09B6                             ; 
+09B6   CD 78 09     ABS:      CALL   PARN   ;*** ABS(EXPR) ***
+09B9   1B                     DCX   D   
+09BA   CD E9 09               CALL   CHKSGN   ;CHECK SIGN
+09BD   13                     INX   D   
+09BE   C9                     RET      
+09BF                             ; 
+09BF   2A 15 80     SIZE:     LHLD   TXTUNF   ;*** SIZE ***
+09C2   D5                     PUSH   D   ;GET THE NUMBER OF FREE
+09C3   EB                     XCHG      ;BYTES BETWEEN "TXTUNF"
+09C4   21 00 FC               LXI   H,VARBGN   ;AND "VARBGN"
+09C7   CD E2 09               CALL   SUBDE   
+09CA   D1                     POP   D   
+09CB   C9                     RET      
+09CC                             ; 
+09CC                             ;*************************************************************
+09CC                             ; 
+09CC                             ; *** DIVIDE *** SUBDE *** CHKSGN *** CHGSGN *** & CKHLDE ***
+09CC                             ; 
+09CC                             ; "DIVIDE" DIVIDES HL BY DE, RESULT IN BC, REMAINDER IN HL
+09CC                             ; 
+09CC                             ; "SUBDE" SUBSTRACTS DE FROM HL
+09CC                             ; 
+09CC                             ; "CHKSGN" CHECKS SIGN OF HL.  IF +, NO CHANGE.  IF -, CHANGE
+09CC                             ; SIGN AND FLIP SIGN OF B.
+09CC                             ; 
+09CC                             ; "CHGSGN" CHECKS SIGN N OF HL AND B UNCONDITIONALLY.
+09CC                             ; 
+09CC                             ; "CKHLDE" CHECKS SIGN OF HL AND DE.  IF DIFFERENT, HL AND DE
+09CC                             ; ARE INTERCHANGED.  IF SAME SIGN, NOT INTERCHANGED.  EITHER
+09CC                             ; CASE, HL DE ARE THEN COMPARED TO SET THE FLAGS.
+09CC                             ; 
+09CC   E5           DIVIDE:   PUSH   H   ;*** DIVIDE ***
+09CD   6C                     MOV   L,H   ;DIVIDE H BY DE
+09CE   26 00                  MVI   H,0   
+09D0   CD D7 09               CALL   DV1   
+09D3   41                     MOV   B,C   ;SAVE RESULT IN B
+09D4   7D                     MOV   A,L   ;(REMINDER+L)/DE
+09D5   E1                     POP   H   
+09D6   67                     MOV   H,A   
+09D7   0E FF        DV1:      MVI   C,0FFH   ;RESULT IN C
+09D9   0C           DV2:      INR   C   ;DUMB ROUTINE
+09DA   CD E2 09               CALL   SUBDE   ;DIVIDE BY SUBTRACT
+09DD   D2 D9 09               JNC   DV2   ;AND COUNT
+09E0   19                     DAD   D   
+09E1   C9                     RET      
+09E2                             ; 
+09E2   7D           SUBDE:    MOV   A,L   ;*** SUBDE ***
+09E3   93                     SUB   E   ;SUBSTRACT DE FROM
+09E4   6F                     MOV   L,A   ;HL
+09E5   7C                     MOV   A,H   
+09E6   9A                     SBB   D   
+09E7   67                     MOV   H,A   
+09E8   C9                     RET      
+09E9                             ; 
+09E9   7C           CHKSGN:   MOV   A,H   ;*** CHKSGN ***
+09EA   B7                     ORA   A   ;CHECK SIGN OF HL
+09EB   F0                     RP      ;IF -, CHANGE SIGN
+09EC                             ; 
+09EC   7C           CHGSGN:   MOV   A,H   ;*** CHGSGN ***
+09ED   F5                     PUSH   PSW   
+09EE   2F                     CMA      ;CHANGE SIGN OF HL
+09EF   67                     MOV   H,A   
+09F0   7D                     MOV   A,L   
+09F1   2F                     CMA      
+09F2   6F                     MOV   L,A   
+09F3   23                     INX   H   
+09F4   F1                     POP   PSW   
+09F5   AC                     XRA   H   
+09F6   F2 B5 05               JP   QHOW   
+09F9   78                     MOV   A,B   ;AND ALSO FLIP B
+09FA   EE 80                  XRI   80H   
+09FC   47                     MOV   B,A   
+09FD   C9                     RET      
+09FE                             ; 
+09FE   7C           CKHLDE:   MOV   A,H   
+09FF   AA                     XRA   D   ;SAME SIGN?
+0A00   F2 04 0A               JP   CK1   ;YES, COMPARE
+0A03   EB                     XCHG      ;NO, XCH AND COMP
+0A04   CD 2B 05     CK1:      CALL   COMP   
+0A07   C9                     RET      
+0A08                             ; 
+0A08                             ;*************************************************************
+0A08                             ; 
+0A08                             ; *** SETVAL *** FIN *** ENDCHK *** & ERROR (& FRIENDS) ***
+0A08                             ; 
+0A08                             ; "SETVAL" EXPECTS A VARIABLE, FOLLOWED BY AN EQUAL SIGN AND
+0A08                             ; THEN AN EXPR.  IT EVALUATES THE EXPR. AND SET THE VARIABLE
+0A08                             ; TO THAT VALUE.
+0A08                             ; 
+0A08                             ; "FIN" CHECKS THE END OF A COMMAND.  IF IT ENDED WITH "�",
+0A08                             ; EXECUTION CONTINUES.  IF IT ENDED WITH A CR, IT FINDS THE
+0A08                             ; NEXT LINE AND CONTINUE FROM THERE.
+0A08                             ; 
+0A08                             ; "ENDCHK" CHECKS IF A COMMAND IS ENDED WITH CR.  THIS IS
+0A08                             ; REQUIRED IN CERTAIN COMMANDS.  (GOTO, RETURN, AND STOP ETC.)
+0A08                             ; 
+0A08                             ; "ERROR" PRINTS THE STRING POINTED BY DE (AND ENDS WITH CR).
+0A08                             ; IT THEN PRINTS THE LINE POINTED BY "CURRNT" WITH A "?"
+0A08                             ; INSERTED AT WHERE THE OLD TEXT POINTER (SHOULD BE ON TOP
+0A08                             ; OF THE STACK) POINTS TO.  EXECUTION OF TB IS STOPPED
+0A08                             ; AND TBI IS RESTARTED.  HOWEVER, IF "CURRNT" -> ZERO
+0A08                             ; (INDICATING A DIRECT COMMAND), THE DIRECT COMMAND IS NOT
+0A08                             ; PRINTED.  AND IF "CURRNT" -> NEGATIVE # (INDICATING "INPUT"
+0A08                             ; COMMAND), THE INPUT LINE IS NOT PRINTED AND EXECUTION IS
+0A08                             ; NOT TERMINATED BUT CONTINUED AT "INPERR".
+0A08                             ; 
+0A08                             ; RELATED TO "ERROR" ARE THE FOLLOWING:
+0A08                             ; "QWHAT" SAVES TEXT POINTER IN STACK AND GET MESSAGE "WHAT?"
+0A08                             ; "AWHAT" JUST GET MESSAGE "WHAT?" AND JUMP TO "ERROR".
+0A08                             ; "QSORRY" AND "ASORRY" DO SAME KIND OF THING.
+0A08                             ; "AHOW" AND "AHOW" IN THE ZERO PAGE SECTION ALSO DO THIS.
+0A08                             ; 
+0A08   CD 43 05     SETVAL:   CALL   TSTV   ;*** SETVAL ***
+0A0B   DA 3A 0A               JC   QWHAT   ;"WHAT?" NO VARIABLE
+0A0E   E5                     PUSH   H   ;SAVE ADDRESS OF VAR.
+0A0F   CD 77 05               CALL   TSTC   ;PASS "=" SIGN
+0A12   3D                     DB   "="   
+0A13   0A                     DB   SV1-$-1   
+0A14   CD 23 05               CALL   EXPR   ;EVALUATE EXPR.
+0A17   44                     MOV   B,H   ;VALUE IS IN BC NOW
+0A18   4D                     MOV   C,L   
+0A19   E1                     POP   H   ;GET ADDRESS
+0A1A   71                     MOV   M,C   ;SAVE VALUE
+0A1B   23                     INX   H   
+0A1C   70                     MOV   M,B   
+0A1D   C9                     RET      
+0A1E   C3 3A 0A     SV1:      JMP   QWHAT   ;NO "=" SIGN
+0A21                             ; 
+0A21   CD 77 05     FIN:      CALL   TSTC   ;*** FIN ***
+0A24   3B                     DB   3BH   
+0A25   04                     DB   FI1-$-1   
+0A26   F1                     POP   PSW   ;";", PURGE RET. ADDR.
+0A27   C3 75 06               JMP   RUNSML   ;CONTINUE SAME LINE
+0A2A   CD 77 05     FI1:      CALL   TSTC   ;NOT ";", IS IT CR?
+0A2D   0D                     DB   CR   
+0A2E   04                     DB   FI2-$-1   
+0A2F   F1                     POP   PSW   ;YES, PURGE RET. ADDR.
+0A30   C3 65 06               JMP   RUNNXL   ;RUN NEXT LINE
+0A33   C9           FI2:      RET      ;ELSE RETURN TO CALLER
+0A34                             ; 
+0A34   CD 33 05     ENDCHK:   CALL   IGNBLK   ;*** ENDCHK ***
+0A37   FE 0D                  CPI   CR   ;END WITH CR?
+0A39   C8                     RZ      ;OK, ELSE SAY: "WHAT?"
+0A3A                             ; 
+0A3A   D5           QWHAT:    PUSH   D   ;*** QWHAT ***
+0A3B   11 C4 05     AWHAT:    LXI   D,WHAT   ;*** AWHAT ***
+0A3E   97           ERROR:    SUB   A   ;*** ERROR ***
+0A3F   CD DE 0A               CALL   PRTSTG   ;PRINT "WHAT?", "HOW?"
+0A42   D1                     POP   D   ;OR "SORRY"
+0A43   1A                     LDAX   D   ;SAVE THE CHARACTER
+0A44   F5                     PUSH   PSW   ;AT WHERE OLD DE ->
+0A45   97                     SUB   A   ;AND PUT A 0 THERE
+0A46   12                     STAX   D   
+0A47   2A 01 80               LHLD   CURRNT   ;GET CURRENT LINE #
+0A4A   E5                     PUSH   H   
+0A4B   7E                     MOV   A,M   ;CHECK THE VALUE
+0A4C   23                     INX   H   
+0A4D   B6                     ORA   M   
+0A4E   D1                     POP   D   
+0A4F   CA D0 05               JZ   RSTART   ;IF ZERO, JUST RESTART
+0A52   7E                     MOV   A,M   ;IF NEGATIVE,
+0A53   B7                     ORA   A   
+0A54   FA 05 08               JM   INPERR   ;REDO INPUT
+0A57   CD 60 0B               CALL   PRTLN   ;ELSE PRINT THE LINE
+0A5A   1B                     DCX   D   ;UPTO WHERE THE 0 IS
+0A5B   F1                     POP   PSW   ;RESTORE THE CHARACTER
+0A5C   12                     STAX   D   
+0A5D   3E 3F                  MVI   A,3FH   ;PRINT A "?"
+0A5F   CD 1B 05               CALL   OUTC   
+0A62   97                     SUB   A   ;AND THE REST OF THE
+0A63   CD DE 0A               CALL   PRTSTG   ;LINE
+0A66   C3 D0 05               JMP   RSTART   ;THEN RESTART
+0A69                             ; 
+0A69   D5           QSORRY:   PUSH   D   ;*** QSORRY ***
+0A6A   11 CA 05     ASORRY:   LXI   D,SORRY   ;*** ASORRY ***
+0A6D   C3 3E 0A               JMP   ERROR   
+0A70                             ; 
+0A70                             ;*************************************************************
+0A70                             ; 
+0A70                             ; *** GETLN *** FNDLN (& FRIENDS) ***
+0A70                             ; 
+0A70                             ; "GETLN" READS A INPUT LINE INTO "BUFFER".  IT FIRST PROMPT
+0A70                             ; THE CHARACTER IN A (GIVEN BY THE CALLER), THEN IT FILLS
+0A70                             ; THE BUFFER AND ECHOS.  IT IGNORES LF'S AND NULLS, BUT STILL
+0A70                             ; ECHOS THEM BACK.  RUB-OUT IS USED TO CAUSE IT TO DELETE
+0A70                             ; THE LAST CHARACTER (IF THERE IS ONE), AND ALT-MOD IS USED TO
+0A70                             ; CAUSE IT TO DELETE THE WHOLE LINE AND START IT ALL OVER.
+0A70                             ; CR SIGNALS THE END OF A LINE, AND CAUSE "GETLN" TO RETURN.
+0A70                             ; 
+0A70                             ; "FNDLN" FINDS A LINE WITH A GIVEN LINE # (IN HL) IN THE
+0A70                             ; TEXT SAVE AREA.  DE IS USED AS THE TEXT POINTER.  IF THE
+0A70                             ; LINE IS FOUND, DE WILL POINT TO THE BEGINNING OF THAT LINE
+0A70                             ; (I.E., THE LOW BYTE OF THE LINE #), AND FLAGS ARE NC & Z.
+0A70                             ; IF THAT LINE IS NOT THERE AND A LINE WITH A HIGHER LINE #
+0A70                             ; IS FOUND, DE POINTS TO THERE AND FLAGS ARE NC & NZ.  IF
+0A70                             ; WE REACHED THE END OF TEXT SAVE AREA AND CANNOT FIND THE
+0A70                             ; LINE, FLAGS ARE C & NZ.
+0A70                             ; "FNDLN" WILL INITIALIZE DE TO THE BEGINNING OF THE TEXT SAVE
+0A70                             ; AREA TO START THE SEARCH.  SOME OTHER ENTRIES OF THIS
+0A70                             ; ROUTINE WILL NOT INITIALIZE DE AND DO THE SEARCH.
+0A70                             ; "FNDLNP" WILL START WITH DE AND SEARCH FOR THE LINE #.
+0A70                             ; "FNDNXT" WILL BUMP DE BY 2, FIND A CR AND THEN START SEARCH.
+0A70                             ; "FNDSKP" USE DE TO FIND A CR, AND THEN START SEARCH.
+0A70                             ; 
+0A70   CD 1B 05     GETLN:    CALL   OUTC   ;*** GETLN ***
+0A73   11 37 FC               LXI   D,BUFFER   ;PROMPT AND INIT.
+0A76   CD 18 0C     GL1:      CALL   CHKIO   ;CHECK KEYBOARD
+0A79   CA 76 0A               JZ   GL1   ;NO INPUT, WAIT
+0A7C   FE 7F                  CPI   7FH   ;DELETE LAST CHARACTER?
+0A7E   CA 9D 0A               JZ   GL3   ;YES
+0A81   CD 1B 05               CALL   OUTC   ;INPUT, ECHO BACK
+0A84   FE 0A                  CPI   0AH   ;IGNORE LF
+0A86   CA 76 0A               JZ   GL1   
+0A89   B7                     ORA   A   ;IGNORE NULL
+0A8A   CA 76 0A               JZ   GL1   
+0A8D   FE 7D                  CPI   7DH   ;DELETE THE WHOLE LINE?
+0A8F   CA AC 0A               JZ   GL4   ;YES
+0A92   12                     STAX   D   ;ELSE SAVE INPUT
+0A93   13                     INX   D   ;AND BUMP POINTER
+0A94   FE 0D                  CPI   0DH   ;WAS IT CR?
+0A96   C8                     RZ      ;YES, END OF LINE
+0A97   7B                     MOV   A,E   ;ELSE MORE FREE ROOM?
+0A98   FE 77                  CPI   <BUFEND   
+0A9A   C2 76 0A               JNZ   GL1   ;YES, GET NEXT INPUT
+0A9D   7B           GL3:      MOV   A,E   ;DELETE LAST CHARACTER
+0A9E   FE 37                  CPI   <BUFFER   ;BUT DO WE HAVE ANY?
+0AA0   CA AC 0A               JZ   GL4   ;NO, REDO WHOLE LINE
+0AA3   1B                     DCX   D   ;YES, BACKUP POINTER
+0AA4   3E 5C                  MVI   A,5CH   ;AND ECHO A BACK-SLASH
+0AA6   CD 1B 05               CALL   OUTC   
+0AA9   C3 76 0A               JMP   GL1   ;GO GET NEXT INPUT
+0AAC   CD 19 05     GL4:      CALL   CRLF   ;REDO ENTIRE LINE
+0AAF   3E 5E                  MVI   A,05EH   ;CR, LF AND UP-ARROW
+0AB1   C3 70 0A               JMP   GETLN   
+0AB4                             ; 
+0AB4   7C           FNDLN:    MOV   A,H   ;*** FNDLN ***
+0AB5   B7                     ORA   A   ;CHECK SIGN OF HL
+0AB6   FA B5 05               JM   QHOW   ;IT CANNOT BE -
+0AB9   11 17 80               LXI   D,TXTBGN   ;INIT TEXT POINTER
+0ABC                             ; 
+0ABC                FNDLP:       ;*** FDLNP ***
+0ABC   E5           FL1:      PUSH   H   ;SAVE LINE #
+0ABD   2A 15 80               LHLD   TXTUNF   ;CHECK IF WE PASSED END
+0AC0   2B                     DCX   H   
+0AC1   CD 2B 05               CALL   COMP   
+0AC4   E1                     POP   H   ;GET LINE # BACK
+0AC5   D8                     RC      ;C,NZ PASSED END
+0AC6   1A                     LDAX   D   ;WE DID NOT, GET BYTE 1
+0AC7   95                     SUB   L   ;IS THIS THE LINE?
+0AC8   47                     MOV   B,A   ;COMPARE LOW ORDER
+0AC9   13                     INX   D   
+0ACA   1A                     LDAX   D   ;GET BYTE 2
+0ACB   9C                     SBB   H   ;COMPARE HIGH ORDER
+0ACC   DA D3 0A               JC   FL2   ;NO, NOT THERE YET
+0ACF   1B                     DCX   D   ;ELSE WE EITHER FOUND
+0AD0   B0                     ORA   B   ;IT, OR IT IS NOT THERE
+0AD1   C9                     RET      ;NC,Z:FOUND, NC,NZ:NO
+0AD2                             ; 
+0AD2                FNDNXT:      ;*** FNDNXT ***
+0AD2   13                     INX   D   ;FIND NEXT LINE
+0AD3   13           FL2:      INX   D   ;JUST PASSED BYTE 1 & 2
+0AD4                             ; 
+0AD4   1A           FNDSKP:   LDAX   D   ;*** FNDSKP ***
+0AD5   FE 0D                  CPI   CR   ;TRY TO FIND CR
+0AD7   C2 D3 0A               JNZ   FL2   ;KEEP LOOKING
+0ADA   13                     INX   D   ;FOUND CR, SKIP OVER
+0ADB   C3 BC 0A               JMP   FL1   ;CHECK IF END OF TEXT
+0ADE                             ; 
+0ADE                             ;*************************************************************
+0ADE                             ; 
+0ADE                             ; *** PRTSTG *** QTSTG *** PRTNUM *** & PRTLN ***
+0ADE                             ; 
+0ADE                             ; "PRTSTG" PRINTS A STRING POINTED BY DE.  IT STOPS PRINTING
+0ADE                             ; AND RETURNS TO CALLER WHEN EITHER A CR IS PRINTED OR WHEN
+0ADE                             ; THE NEXT BYTE IS THE SAME AS WHAT WAS IN A (GIVEN BY THE
+0ADE                             ; CALLER).  OLD A IS STORED IN B, OLD B IS LOST.
+0ADE                             ; 
+0ADE                             ; "QTSTG" LOOKS FOR A BACK-ARROW, SINGLE QUOTE, OR DOUBLE
+0ADE                             ; QUOTE.  IF NONE OF THESE, RETURN TO CALLER.  IF BACK-ARROW,
+0ADE                             ; OUTPUT A CR WITHOUT A LF.  IF SINGLE OR DOUBLE QUOTE, PRINT
+0ADE                             ; THE STRING IN THE QUOTE AND DEMANDS A MATCHING UNQUOTE.
+0ADE                             ; AFTER THE PRINTING THE NEXT 3 BYTES OF THE CALLER IS SKIPPED
+0ADE                             ; OVER (USUALLY A JUMP INSTRUCTION.
+0ADE                             ; 
+0ADE                             ; "PRTNUM" PRINTS THE NUMBER IN HL.  LEADING BLANKS ARE ADDED
+0ADE                             ; IF NEEDED TO PAD THE NUMBER OF SPACES TO THE NUMBER IN C.
+0ADE                             ; HOWEVER, IF THE NUMBER OF DIGITS IS LARGER THAN THE # IN
+0ADE                             ; C, ALL DIGITS ARE PRINTED ANYWAY.  NEGATIVE SIGN IS ALSO
+0ADE                             ; PRINTED AND COUNTED IN, POSITIVE SIGN IS NOT.
+0ADE                             ; 
+0ADE                             ; "PRTLN" PRINTS A SAVED TEXT LINE WITH LINE # AND ALL.
+0ADE                             ; 
+0ADE   47           PRTSTG:   MOV   B,A   ;*** PRTSTG ***
+0ADF   1A           PS1:      LDAX   D   ;GET A CHARACTER
+0AE0   13                     INX   D   ;BUMP POINTER
+0AE1   B8                     CMP   B   ;SAME AS OLD A?
+0AE2   C8                     RZ      ;YES, RETURN
+0AE3   CD 1B 05               CALL   OUTC   ;ELSE PRINT IT
+0AE6   FE 0D                  CPI   CR   ;WAS IT A CR?
+0AE8   C2 DF 0A               JNZ   PS1   ;NO, NEXT
+0AEB   C9                     RET      ;YES, RETURN
+0AEC                             ; 
+0AEC   CD 77 05     QTSTG:    CALL   TSTC   ;*** QTSTG ***
+0AEF   22                     DB   22h   
+0AF0   0F                     DB   QT3-$-1   
+0AF1   3E 22                  MVI   A,22H   ;IT IS A "
+0AF3   CD DE 0A     QT1:      CALL   PRTSTG   ;PRINT UNTIL ANOTHER
+0AF6   FE 0D                  CPI   CR   ;WAS LAST ONE A CR?
+0AF8   E1                     POP   H   ;RETURN ADDRESS
+0AF9   CA 65 06               JZ   RUNNXL   ;WAS CR, RUN NEXT LINE
+0AFC   23           QT2:      INX   H   ;SKIP 3 BYTES ON RETURN
+0AFD   23                     INX   H   
+0AFE   23                     INX   H   
+0AFF   E9                     PCHL      ;RETURN
+0B00   CD 77 05     QT3:      CALL   TSTC   ;IS IT A '?
+0B03   27                     DB   27H   
+0B04   05                     DB   QT4-$-1   
+0B05   3E 27                  MVI   A,27H   ;YES, DO THE SAME
+0B07   C3 F3 0A               JMP   QT1   ;AS IN "
+0B0A   CD 77 05     QT4:      CALL   TSTC   ;IS IT BACK-ARROW?
+0B0D   5F                     DB   5FH   
+0B0E   0C                     DB   QT5-$-1   
+0B0F   3E 8D                  MVI   A,08DH   ;YES, CR WITHOUT LF
+0B11   CD 1B 05               CALL   OUTC   ;DO IT TWICE TO GIVE
+0B14   CD 1B 05               CALL   OUTC   ;TTY ENOUGH TIME
+0B17   E1                     POP   H   ;RETURN ADDRESS
+0B18   C3 FC 0A               JMP   QT2   
+0B1B   C9           QT5:      RET      ;NONE OF ABOVE
+0B1C                             ; 
+0B1C   06 00        PRTNUM:   MVI   B,0   ;*** PRTNUM ***
+0B1E   CD E9 09               CALL   CHKSGN   ;CHECK SIGN
+0B21   F2 27 0B               JP   PN1   ;NO SIGN
+0B24   06 2D                  MVI   B,"-"   ;B=SIGN
+0B26   0D                     DCR   C   ;"-" TAKES SPACE
+0B27   D5           PN1:      PUSH   D   ;SAVE
+0B28   11 0A 00               LXI   D,0AH   ;DECIMAL
+0B2B   D5                     PUSH   D   ;SAVE AS A FLAG
+0B2C   0D                     DCR   C   ;C=SPACES
+0B2D   C5                     PUSH   B   ;SAVE SIGN & SPACE
+0B2E   CD CC 09     PN2:      CALL   DIVIDE   ;DIVIDE HL BY 10
+0B31   78                     MOV   A,B   ;RESULT 0?
+0B32   B1                     ORA   C   
+0B33   CA 3E 0B               JZ   PN3   ;YES, WE GOT ALL
+0B36   E3                     XTHL      ;NO, SAVE REMAINDER
+0B37   2D                     DCR   L   ;AND COUNT SPACE
+0B38   E5                     PUSH   H   ;HL IS OLD BC
+0B39   60                     MOV   H,B   ;MOVE RESULT TO BC
+0B3A   69                     MOV   L,C   
+0B3B   C3 2E 0B               JMP   PN2   ;AND DIVIDE BY 10
+0B3E   C1           PN3:      POP   B   ;WE GOT ALL DIGITS IN
+0B3F   0D           PN4:      DCR   C   ;THE STACK
+0B40   79                     MOV   A,C   ;LOOK AT SPACE COUNT
+0B41   B7                     ORA   A   
+0B42   FA 4D 0B               JM   PN5   ;NO LEADING BLANKS
+0B45   3E 20                  MVI   A,20H   ;LEADING BLANKS
+0B47   CD 1B 05               CALL   OUTC   
+0B4A   C3 3F 0B               JMP   PN4   ;MORE?
+0B4D   78           PN5:      MOV   A,B   ;PRINT SIGN
+0B4E   B7                     ORA   A   
+0B4F   C4 10 00               CNZ   10H   
+0B52   5D                     MOV   E,L   ;LAST REMAINDER IN E
+0B53   7B           PN6:      MOV   A,E   ;CHECK DIGIT IN E
+0B54   FE 0A                  CPI   0AH   ;10 IS FLAG FOR NO MORE
+0B56   D1                     POP   D   
+0B57   C8                     RZ      ;IF SO, RETURN
+0B58   C6 30                  ADI   30H   ;ELSE CONVERT TO ASCII
+0B5A   CD 1B 05               CALL   OUTC   ;AND PRINT THE DIGIT
+0B5D   C3 53 0B               JMP   PN6   ;GO BACK FOR MORE
+0B60                             ; 
+0B60   1A           PRTLN:    LDAX   D   ;*** PRTLN ***
+0B61   6F                     MOV   L,A   ;LOW ORDER LINE #
+0B62   13                     INX   D   
+0B63   1A                     LDAX   D   ;HIGH ORDER
+0B64   67                     MOV   H,A   
+0B65   13                     INX   D   
+0B66   0E 04                  MVI   C,4H   ;PRINT 4 DIGIT LINE #
+0B68   CD 1C 0B               CALL   PRTNUM   
+0B6B   3E 20                  MVI   A,20H   ;FOLLOWED BY A BLANK
+0B6D   CD 1B 05               CALL   OUTC   
+0B70   97                     SUB   A   ;AND THEN THE NEXT
+0B71   CD DE 0A               CALL   PRTSTG   
+0B74   C9                     RET      
+0B75                             ; 
+0B75                             ;*************************************************************
+0B75                             ; 
+0B75                             ; *** MVUP *** MVDOWN *** POPA *** & PUSHA ***
+0B75                             ; 
+0B75                             ; "MVUP" MOVES A BLOCK UP FROM WHERE DE-> TO WHERE BC-> UNTIL
+0B75                             ; DE = HL
+0B75                             ; 
+0B75                             ; "MVDOWN" MOVES A BLOCK DOWN FROM WHERE DE-> TO WHERE HL->
+0B75                             ; UNTIL DE = BC
+0B75                             ; 
+0B75                             ; "POPA" RESTORES THE "FOR" LOOP VARIABLE SAVE AREA FROM THE
+0B75                             ; STACK
+0B75                             ; 
+0B75                             ; "PUSHA" STACKS THE "FOR" LOOP VARIABLE SAVE AREA INTO THE
+0B75                             ; STACK
+0B75                             ; 
+0B75   CD 2B 05     MVUP:     CALL   COMP   ;*** MVUP ***
+0B78   C8                     RZ      ;DE = HL, RETURN
+0B79   1A                     LDAX   D   ;GET ONE BYTE
+0B7A   02                     STAX   B   ;MOVE IT
+0B7B   13                     INX   D   ;INCREASE BOTH POINTERS
+0B7C   03                     INX   B   
+0B7D   C3 75 0B               JMP   MVUP   ;UNTIL DONE
+0B80                             ; 
+0B80   78           MVDOWN:   MOV   A,B   ;*** MVDOWN ***
+0B81   92                     SUB   D   ;TEST IF DE = BC
+0B82   C2 88 0B               JNZ   MD1   ;NO, GO MOVE
+0B85   79                     MOV   A,C   ;MAYBE, OTHER BYTE?
+0B86   93                     SUB   E   
+0B87   C8                     RZ      ;YES, RETURN
+0B88   1B           MD1:      DCX   D   ;ELSE MOVE A BYTE
+0B89   2B                     DCX   H   ;BUT FIRST DECREASE
+0B8A   1A                     LDAX   D   ;BOTH POINTERS AND
+0B8B   77                     MOV   M,A   ;THEN DO IT
+0B8C   C3 80 0B               JMP   MVDOWN   ;LOOP BACK
+0B8F                             ; 
+0B8F   C1           POPA:     POP   B   ;BC = RETURN ADDR.
+0B90   E1                     POP   H   ;RESTORE LOPVAR, BUT
+0B91   22 09 80               SHLD   LOPVAR   ;=0 MEANS NO MORE
+0B94   7C                     MOV   A,H   
+0B95   B5                     ORA   L   
+0B96   CA A9 0B               JZ   PP1   ;YEP, GO RETURN
+0B99   E1                     POP   H   ;NOP, RESTORE OTHERS
+0B9A   22 0B 80               SHLD   LOPINC   
+0B9D   E1                     POP   H   
+0B9E   22 0D 80               SHLD   LOPLMT   
+0BA1   E1                     POP   H   
+0BA2   22 0F 80               SHLD   LOPLN   
+0BA5   E1                     POP   H   
+0BA6   22 11 80               SHLD   LOPPT   
+0BA9   C5           PP1:      PUSH   B   ;BC = RETURN ADDR.
+0BAA   C9                     RET      
+0BAB                             ; 
+0BAB   21 78 FC     PUSHA:    LXI   H,STKLMT   ;*** PUSHA ***
+0BAE   CD EC 09               CALL   CHGSGN   
+0BB1   C1                     POP   B   ;BC=RETURN ADDRESS
+0BB2   39                     DAD   SP   ;IS STACK NEAR THE TOP?
+0BB3   D2 69 0A               JNC   QSORRY   ;YES, SORRY FOR THAT
+0BB6   2A 09 80               LHLD   LOPVAR   ;ELSE SAVE LOOP VAR'S
+0BB9   7C                     MOV   A,H   ;BUT IF LOPVAR IS 0
+0BBA   B5                     ORA   L   ;THAT WILL BE ALL
+0BBB   CA D1 0B               JZ   PU1   
+0BBE   2A 11 80               LHLD   LOPPT   ;ELSE, MORE TO SAVE
+0BC1   E5                     PUSH   H   
+0BC2   2A 0F 80               LHLD   LOPLN   
+0BC5   E5                     PUSH   H   
+0BC6   2A 0D 80               LHLD   LOPLMT   
+0BC9   E5                     PUSH   H   
+0BCA   2A 0B 80               LHLD   LOPINC   
+0BCD   E5                     PUSH   H   
+0BCE   2A 09 80               LHLD   LOPVAR   
+0BD1   E5           PU1:      PUSH   H   
+0BD2   C5                     PUSH   B   ;BC = RETURN ADDR.
+0BD3   C9                     RET      
+0BD4                             ; 
+0BD4                             ;*************************************************************
+0BD4                             ; 
+0BD4                             ; *** OUTC *** & CHKIO ***
+0BD4                             ; 
+0BD4                             ; THESE ARE THE ONLY I/O ROUTINES IN TBI.
+0BD4                             ; "OUTC" IS CONTROLLED BY A SOFTWARE SWITCH "OCSW".  IF OCSW=0
+0BD4                             ; "OUTC" WILL JUST RETURN TO THE CALLER.  IF OCSW IS NOT 0,
+0BD4                             ; IT WILL OUTPUT THE BYTE IN A.  IF THAT IS A CR, A LF IS ALSO
+0BD4                             ; SEND OUT.  ONLY THE FLAGS MAY BE CHANGED AT RETURN. ALL REG.
+0BD4                             ; ARE RESTORED.
+0BD4                             ; 
+0BD4                             ; "CHKIO" CHECKS THE INPUT.  IF NO INPUT, IT WILL RETURN TO
+0BD4                             ; THE CALLER WITH THE Z FLAG SET.  IF THERE IS INPUT, Z FLAG
+0BD4                             ; IS CLEARED AND THE INPUT BYTE IS IN A.  HOWEVER, IF THE
+0BD4                             ; INPUT IS A CONTROL-O, THE "OCSW" SWITCH IS COMPLIMENTED, AND
+0BD4                             ; Z FLAG IS RETURNED.  IF A CONTROL-C IS READ, "CHKIO" WILL
+0BD4                             ; RESTART TBI AND DO NOT RETURN TO THE CALLER.
+0BD4                             ; 
+0BD4                             ;OUTC:  PUSH PSW                        ;THIS IS AT LOC. 10
+0BD4                             ;       LDA  OCSW                       ;CHECK SOFTWARE SWITCH
+0BD4                             ;       ORA  A
+0BD4                ACIA_C:   EQU   0DEh   
+0BD4                ACIA_D:   EQU   0DFh   
+0BD4   32 00 80     INIT:     STA   OCSW   
+0BD7   3E 03                  MVI   A,3   ;RESET ACIA
+0BD9   D3 10                  OUT   16   
+0BDB   3E 15                  MVI   A,15H   ;15H FOR 8N1, 11H FOR 8N2
+0BDD   D3 10                  OUT   16   
+0BDF   16 19                  MVI   D,19H   
+0BE1                PATLOP:      
+0BE1   CD 19 05               CALL   CRLF   
+0BE4   15                     DCR   D   
+0BE5   C2 E1 0B               JNZ   PATLOP   
+0BE8   97                     SUB   A   
+0BE9   11 37 0C               LXI   D,MSG1   
+0BEC   CD DE 0A               CALL   PRTSTG   
+0BEF   21 11 05               LXI   H,START   
+0BF2   22 13 80               SHLD   RANPNT   
+0BF5   21 17 80               LXI   H,TXTBGN   
+0BF8   22 15 80               SHLD   TXTUNF   
+0BFB   C3 D0 05               JMP   RSTART   
+0BFE   C2 03 0C     OC2:      JNZ   OC3   ;IT IS ON
+0C01   F1                     POP   PSW   ;IT IS OFF
+0C02   C9                     RET      ;RESTORE AF AND RETURN
+0C03   DB DE        OC3:      IN   ACIA_C   ;COME HERE TO DO OUTPUT
+0C05   E6 02                  ANI   2H   ;STATUS BIT
+0C07   CA 03 0C               JZ   OC3   ;NOT READY, WAIT
+0C0A   F1                     POP   PSW   ;READY, GET OLD A BACK
+0C0B   D3 DF                  OUT   ACIA_D   ;AND SEND IT OUT
+0C0D   FE 0D                  CPI   CR   ;WAS IT CR?
+0C0F   C0                     RNZ      ;NO, FINISHED
+0C10   3E 0A                  MVI   A,LF   ;YES, WE SEND LF TOO
+0C12   CD 1B 05               CALL   OUTC   ;THIS IS RECURSIVE
+0C15   3E 0D                  MVI   A,CR   ;GET CR BACK IN A
+0C17   C9                     RET      
+0C18                             ; 
+0C18   DB DE        CHKIO:    IN   ACIA_C   ;*** CHKIO ***
+0C1A   00                     NOP      ;STATUS BIT FLIPPED?
+0C1B   E6 01                  ANI   01H   ;MASK STATUS BIT
+0C1D   C8                     RZ      ;NOT READY, RETURN "Z"
+0C1E   DB DF                  IN   ACIA_D   ;READY, READ DATA
+0C20   E6 7F                  ANI   7FH   ;MASK BIT 7 OFF
+0C22   FE 0F                  CPI   0FH   ;IS IT CONTROL-O?
+0C24   C2 31 0C               JNZ   CI1   ;NO, MORE CHECKING
+0C27   3A 00 80               LDA   OCSW   ;CONTROL-O FLIPS OCSW
+0C2A   2F                     CMA      ;ON TO OFF, OFF TO ON
+0C2B   32 00 80               STA   OCSW   
+0C2E   C3 18 0C               JMP   CHKIO   ;GET ANOTHER INPUT
+0C31   FE 03        CI1:      CPI   3H   ;IS IT CONTROL-C?
+0C33   C0                     RNZ      ;NO, RETURN "NZ"
+0C34   C3 D0 05               JMP   RSTART   ;YES, RESTART TBI
+0C37                             ; 
+0C37   54 49 4E 59 20 MSG1:   DB   "TINY "   
+0C3C   42 41 53 49 43         DB   "BASIC"   
+0C41   0D                     DB   CR   
+0C42                             ; 
+0C42                             ;*************************************************************
+0C42                             ; 
+0C42                             ; *** TABLES *** DIRECT *** & EXEC ***
+0C42                             ; 
+0C42                             ; THIS SECTION OF THE CODE TESTS A STRING AGAINST A TABLE.
+0C42                             ; WHEN A MATCH IS FOUND, CONTROL IS TRANSFERED TO THE SECTION
+0C42                             ; OF CODE ACCORDING TO THE TABLE.
+0C42                             ; 
+0C42                             ; AT "EXEC", DE SHOULD POINT TO THE STRING AND HL SHOULD POINT
+0C42                             ; TO THE TABLE-1.  AT "DIRECT", DE SHOULD POINT TO THE STRING.
+0C42                             ; HL WILL BE SET UP TO POINT TO TAB1-1, WHICH IS THE TABLE OF
+0C42                             ; ALL DIRECT AND STATEMENT COMMANDS.
+0C42                             ; 
+0C42                             ; A "." IN THE STRING WILL TERMINATE THE TEST AND THE PARTIAL
+0C42                             ; MATCH WILL BE CONSIDERED AS A MATCH.  E.G., "P.", "PR.",
+0C42                             ; "PRI.", "PRIN.", OR "PRINT" WILL ALL MATCH "PRINT".
+0C42                             ; 
+0C42                             ; THE TABLE CONSISTS OF ANY NUMBER OF ITEMS.  EACH ITEM
+0C42                             ; IS A STRING OF CHARACTERS WITH BIT 7 SET TO 0 AND
+0C42                             ; A JUMP ADDRESS STORED HI-LOW WITH BIT 7 OF THE HIGH
+0C42                             ; BYTE SET TO 1.
+0C42                             ; 
+0C42                             ; END OF TABLE IS AN ITEM WITH A JUMP ADDRESS ONLY.  IF THE
+0C42                             ; STRING DOES NOT MATCH ANY OF THE OTHER ITEMS, IT WILL
+0C42                             ; MATCH THIS NULL ITEM AS DEFAULT.
+0C42                             ; 
+0C42                TAB1:        ;DIRECT COMMANDS
+0C42   4C 49 53 54            DB   "LIST"   
+0C46                          ;*Macro unroll:  DWA     LIST
+0C46   86                     DB   >LIST + 128   
+0C47   8F                     DB   <LIST   
+0C48   52 55 4E               DB   "RUN"   
+0C4B                          ;*Macro unroll:  DWA     RUN
+0C4B   86                     DB   >RUN + 128   
+0C4C   5F                     DB   <RUN   
+0C4D   4E 45 57               DB   "NEW"   
+0C50                          ;*Macro unroll:  DWA     NEW
+0C50   86                     DB   >NEW + 128   
+0C51   4C                     DB   <NEW   
+0C52   42 59 45               DB   "BYE"   
+0C55                          ;*Macro unroll:  DWA     BYE
+0C55   86                     DB   >BYE + 128   
+0C56   5B                     DB   <BYE   
+0C57                             ; 
+0C57                TAB2:        ;DIRECT/STATEMENT
+0C57   4E 45 58 54            DB   "NEXT"   
+0C5B                          ;*Macro unroll:  DWA     NEXT
+0C5B   87                     DB   >NEXT + 128   
+0C5C   8F                     DB   <NEXT   
+0C5D   4C 45 54               DB   "LET"   
+0C60                          ;*Macro unroll:  DWA     LET
+0C60   88                     DB   >LET + 128   
+0C61   6F                     DB   <LET   
+0C62   49 46                  DB   "IF"   
+0C64                          ;*Macro unroll:  DWA     IFF
+0C64   87                     DB   >IFF + 128   
+0C65   F4                     DB   <IFF   
+0C66   47 4F 54 4F            DB   "GOTO"   
+0C6A                          ;*Macro unroll:  DWA     GOTO
+0C6A   86                     DB   >GOTO + 128   
+0C6B   7E                     DB   <GOTO   
+0C6C   47 4F 53 55 42         DB   "GOSUB"   
+0C71                          ;*Macro unroll:  DWA     GOSUB
+0C71   86                     DB   >GOSUB + 128   
+0C72   ED                     DB   <GOSUB   
+0C73   52 45 54 55 52 4E      DB   "RETURN"   
+0C79                          ;*Macro unroll:  DWA     RETURN
+0C79   87                     DB   >RETURN + 128   
+0C7A   0F                     DB   <RETURN   
+0C7B   52 45 4D               DB   "REM"   
+0C7E                          ;*Macro unroll:  DWA     REM
+0C7E   87                     DB   >REM + 128   
+0C7F   F0                     DB   <REM   
+0C80   46 4F 52               DB   "FOR"   
+0C83                          ;*Macro unroll:  DWA     FOR
+0C83   87                     DB   >FOR + 128   
+0C84   2A                     DB   <FOR   
+0C85   49 4E 50 55 54         DB   "INPUT"   
+0C8A                          ;*Macro unroll:  DWA     INPUT
+0C8A   88                     DB   >INPUT + 128   
+0C8B   0F                     DB   <INPUT   
+0C8C   50 52 49 4E 54         DB   "PRINT"   
+0C91                          ;*Macro unroll:  DWA     PRINT
+0C91   86                     DB   >PRINT + 128   
+0C92   A7                     DB   <PRINT   
+0C93   53 54 4F 50            DB   "STOP"   
+0C97                          ;*Macro unroll:  DWA     STOP
+0C97   86                     DB   >STOP + 128   
+0C98   55                     DB   <STOP   
+0C99                          ;*Macro unroll:  DWA     DEFLT
+0C99   88                     DB   >DEFLT + 128   
+0C9A   69                     DB   <DEFLT   
+0C9B                             ; 
+0C9B                TAB4:        ;FUNCTIONS
+0C9B   52 4E 44               DB   "RND"   
+0C9E                          ;*Macro unroll:  DWA     RND
+0C9E   89                     DB   >RND + 128   
+0C9F   89                     DB   <RND   
+0CA0   41 42 53               DB   "ABS"   
+0CA3                          ;*Macro unroll:  DWA     ABS
+0CA3   89                     DB   >ABS + 128   
+0CA4   B6                     DB   <ABS   
+0CA5   53 49 5A 45            DB   "SIZE"   
+0CA9                          ;*Macro unroll:  DWA     SIZE
+0CA9   89                     DB   >SIZE + 128   
+0CAA   BF                     DB   <SIZE   
+0CAB                          ;*Macro unroll:  DWA     XP40
+0CAB   89                     DB   >XP40 + 128   
+0CAC   67                     DB   <XP40   
+0CAD                             ; 
+0CAD                TAB5:        ;"TO" IN "FOR"
+0CAD   54 4F                  DB   "TO"   
+0CAF                          ;*Macro unroll:  DWA     FR1
+0CAF   87                     DB   >FR1 + 128   
+0CB0   3A                     DB   <FR1   
+0CB1                          ;*Macro unroll:  DWA     QWHAT
+0CB1   8A                     DB   >QWHAT + 128   
+0CB2   3A                     DB   <QWHAT   
+0CB3                             ; 
+0CB3                TAB6:        ;"STEP" IN "FOR"
+0CB3   53 54 45 50            DB   "STEP"   
+0CB7                          ;*Macro unroll:  DWA     FR2
+0CB7   87                     DB   >FR2 + 128   
+0CB8   46                     DB   <FR2   
+0CB9                          ;*Macro unroll:  DWA     FR3
+0CB9   87                     DB   >FR3 + 128   
+0CBA   4C                     DB   <FR3   
+0CBB                             ; 
+0CBB                TAB8:        ;RELATION OPERATORS
+0CBB   3E 3D                  DB   ">="   
+0CBD                          ;*Macro unroll:  DWA     XP11
+0CBD   88                     DB   >XP11 + 128   
+0CBE   83                     DB   <XP11   
+0CBF   23                     DB   "#"   
+0CC0                          ;*Macro unroll:  DWA     XP12
+0CC0   88                     DB   >XP12 + 128   
+0CC1   89                     DB   <XP12   
+0CC2   3E                     DB   ">"   
+0CC3                          ;*Macro unroll:  DWA     XP13
+0CC3   88                     DB   >XP13 + 128   
+0CC4   8F                     DB   <XP13   
+0CC5   3D                     DB   "="   
+0CC6                          ;*Macro unroll:  DWA     XP15
+0CC6   88                     DB   >XP15 + 128   
+0CC7   9E                     DB   <XP15   
+0CC8   3C 3D                  DB   "<="   
+0CCA                          ;*Macro unroll:  DWA     XP14
+0CCA   88                     DB   >XP14 + 128   
+0CCB   96                     DB   <XP14   
+0CCC   3C                     DB   "<"   
+0CCD                          ;*Macro unroll:  DWA     XP16
+0CCD   88                     DB   >XP16 + 128   
+0CCE   A4                     DB   <XP16   
+0CCF                          ;*Macro unroll:  DWA     XP17
+0CCF   88                     DB   >XP17 + 128   
+0CD0   AA                     DB   <XP17   
+0CD1                             ; 
+0CD1   21 41 0C     DIRECT:   LXI   H,TAB1-1   ;*** DIRECT ***
+0CD4                             ; 
+0CD4                EXEC:        ;*** EXEC ***
+0CD4   CD 33 05     EX0:      CALL   IGNBLK   ;IGNORE LEADING BLANKS
+0CD7   D5                     PUSH   D   ;SAVE POINTER
+0CD8   1A           EX1:      LDAX   D   ;IF FOUND "." IN STRING
+0CD9   13                     INX   D   ;BEFORE ANY MISMATCH
+0CDA   FE 2E                  CPI   2EH   ;WE DECLARE A MATCH
+0CDC   CA F5 0C               JZ   EX3   
+0CDF   23                     INX   H   ;HL->TABLE
+0CE0   BE                     CMP   M   ;IF MATCH, TEST NEXT
+0CE1   CA D8 0C               JZ   EX1   
+0CE4   3E 7F                  MVI   A,07FH   ;ELSE SEE IF BIT 7
+0CE6   1B                     DCX   D   ;OF TABLE IS SET, WHICH
+0CE7   BE                     CMP   M   ;IS THE JUMP ADDR. (HI)
+0CE8   DA FC 0C               JC   EX5   ;C:YES, MATCHED
+0CEB   23           EX2:      INX   H   ;NC:NO, FIND JUMP ADDR.
+0CEC   BE                     CMP   M   
+0CED   D2 EB 0C               JNC   EX2   
+0CF0   23                     INX   H   ;BUMP TO NEXT TAB. ITEM
+0CF1   D1                     POP   D   ;RESTORE STRING POINTER
+0CF2   C3 D4 0C               JMP   EX0   ;TEST AGAINST NEXT ITEM
+0CF5   3E 7F        EX3:      MVI   A,07FH   ;PARTIAL MATCH, FIND
+0CF7   23           EX4:      INX   H   ;JUMP ADDR., WHICH IS
+0CF8   BE                     CMP   M   ;FLAGGED BY BIT 7
+0CF9   D2 F7 0C               JNC   EX4   
+0CFC   7E           EX5:      MOV   A,M   ;LOAD HL WITH THE JUMP
+0CFD   23                     INX   H   ;ADDRESS FROM THE TABLE
+0CFE   6E                     MOV   L,M   
+0CFF   E6 7F                  ANI   7FH   ;MASK OFF BIT 7
+0D01   67                     MOV   H,A   
+0D02   F1                     POP   PSW   ;CLEAN UP THE GABAGE
+0D03   E9                     PCHL      ;AND WE GO DO IT
+0D04                             ; 
+0D04                LSTROM:      ;ALL ABOVE CAN BE ROM
+8000                          .ORG   8000H   ;HERE DOWN MUST BE RAM
+8000                             ;       ORG  0800H
+8000                OCSW:     DS   1   ;SWITCH FOR OUTPUT
+8001                CURRNT:   DS   2   ;POINTS TO CURRENT LINE
+8003                STKGOS:   DS   2   ;SAVES SP IN "GOSUB"
+8005                VARNXT:   DS   2   ;TEMP STORAGE
+8007                STKINP:   DS   2   ;SAVES SP IN "INPUT"
+8009                LOPVAR:   DS   2   ;"FOR" LOOP SAVE AREA
+800B                LOPINC:   DS   2   ;INCREMENT
+800D                LOPLMT:   DS   2   ;LIMIT
+800F                LOPLN:    DS   2   ;LINE NUMBER
+8011                LOPPT:    DS   2   ;TEXT POINTER
+8013                RANPNT:   DS   2   ;RANDOM NUMBER POINTER
+8015                TXTUNF:   DS   2   ;->UNFILLED TEXT AREA
+8017                TXTBGN:   DS   2   ;TEXT SAVE AREA BEGINS
+FC00                          .ORG   0fc00H   
+FC00                             ;       ORG  1F00H
+FC00                TXTEND:   DS   0   ;TEXT SAVE AREA ENDS
+FC00                VARBGN:   DS   55   ;VARIABLE @(0)
+FC37                BUFFER:   DS   64   ;INPUT BUFFER
+FC77                BUFEND:   DS   1   ;BUFFER ENDS
+FC78                STKLMT:   DS   1   ;TOP LIMIT FOR STACK
+FFFF                          .ORG   0ffffH   
+FFFF                             ;       ORG  2000H
+FFFF                STACK:    DS   0   ;STACK STARTS HERE
+FFFF                             ; 
+0D04                          .ORG   lstrom   
+0D04                          .ENDBLOCK      
+0D04                             ; ALPHA ROM Module
+0D04                             ; Needs these instructions on the begin:
+0D04                          .CSEG      
+0D04                          ALIGN   256   
+0E00                          .BLOCK      
+0E00   C3 0E 0E               JMP   testmod   ; Jump to the begin
+0E03                             ; Needed signature: MOD4 + module name, last char with bit 7=1
+0E03   4D 4F 44 34 54 65 73 74 4D 6F E4 .ISTR   "MOD4TestMod"   
+0E0E                             ; here is your space:
+0E0E                TESTMOD:      
+0E0E   21 14 0E               LXI   h,hello   
+0E11   DF                     RST   3   
+0E12   05                     DB   5   
+0E13   C7                     RST   0   
+0E14                HELLO:       
+0E14   54 65 73 74 20 6D 6F 64 75 6C 65 0D 8A .ISTR   "Test module",$0d,$0a   
+0E21                          .ENDBLOCK      
+0E21                             ; KILO ROM Module
+0E21                             ; Needs these instructions on the begin:
+0E21                          .CSEG      
+0E21                          ALIGN   256   
+0F00                          .BLOCK      
+0F00   C3 11 0F               JMP   testmod   ; Jump to the begin
+0F03                             ; 
+0F03                             ; Needed signature: MOD4 + module name
+0F03   4D 4F 44 34 48 45 58 20 4C 6F 61 64 65 F2 .ISTR   "MOD4HEX Loader"   
+0F11                             ; 
+0F11                .macro PRINTSTR,
+0F11                 RST     3 
+0F11                 DB      5 
+0F11                .endm
+0F11                 
+0F11                             ; 
+0F11                .macro SERIN,
+0F11                 RST     3 
+0F11                 DB      3 
+0F11                .endm
+0F11                 
+0F11                             ; 
+0F11                .macro SEROUT,
+0F11                 RST     3 
+0F11                 DB      4 
+0F11                .endm
+0F11                 
+0F11                             ; 
+0F11                             ; here are your space:
+0F11                TESTMOD:      
+0F11   21 C9 0F               LXI   h,hello   
+0F14                          ;*Macro unroll:  PRINTSTR  
+0F14   DF                     RST   3   
+0F15   05                     DB   5   
+0F16   21 00 80               LXI   h,8000h   
+0F19                MSTORE:      
+0F19                          ;*Macro unroll:  SERIN    
+0F19   DF                     RST   3   
+0F1A   03                     DB   3   
+0F1B   CA 19 0F               JZ   mstore   
+0F1E   FE 20                  CPI   20h   
+0F20   CA 31 0F               JZ   mready   
+0F23   77                     MOV   m,a   
+0F24   FE 3A                  CPI   ":"   
+0F26   C2 2A 0F               JNZ   mgo   
+0F29   CF                     RST   1   
+0F2A                MGO:         
+0F2A   23                     INX   h   
+0F2B   7C                     MOV   a,h   
+0F2C   FE E0                  CPI   0e0h   
+0F2E   C2 19 0F               JNZ   mstore   
+0F31                MREADY:      
+0F31   E5                     PUSH   h   
+0F32   21 0F 10               LXI   h,msglen   
+0F35                          ;*Macro unroll:  PRINTSTR  
+0F35   DF                     RST   3   
+0F36   05                     DB   5   
+0F37   E1                     POP   h   
+0F38   E5                     PUSH   h   
+0F39   11 00 80               LXI   d,8000h   
+0F3C   19                     DAD   d   
+0F3D   E5                     PUSH   h   
+0F3E   DF                     RST   3   
+0F3F   06                     DB   6   
+0F40                             ; 
+0F40   21 1E 10               LXI   h,msgcrc   
+0F43                          ;*Macro unroll:  printstr
+0F43   DF                     RST   3   
+0F44   05                     DB   5   
+0F45   C1                     POP   b   
+0F46   21 00 80               LXI   h,8000h   
+0F49   CD 9C 0F               CALL   crcf   
+0F4C   EB                     XCHG      
+0F4D   DF                     RST   3   
+0F4E   06                     DB   6   
+0F4F                             ; 
+0F4F                             ;copy eeprom to e000
+0F4F   11 00 E0               LXI   d,0e000h   
+0F52   21 66 0F               LXI   h,main   
+0F55   01 36 00               LXI   b,mend-main   
+0F58                LDIR:        
+0F58   7E                     MOV   a,m   
+0F59   12                     STAX   d   
+0F5A   13                     INX   d   
+0F5B   23                     INX   h   
+0F5C   0B                     DCX   b   
+0F5D   78                     MOV   a,b   
+0F5E   B1                     ORA   c   
+0F5F   C2 58 0F               JNZ   ldir   
+0F62   E1                     POP   h   
+0F63   C3 00 E0               JMP   0e000h   
+0F66                             ; 
+0F66                MAIN:        
+0F66                          .PHASE   0xe000   
+E000 @0F66                       ; 
+E000 @0F66                       ;eep check
+E000 @0F66   3A 00 00         LDA   0   
+E003 @0F69   FE F3            CPI   0f3h   
+E005 @0F6B   C2 2A E0         JNZ   nomonitor   
+E008 @0F6E   3E 00            MVI   a,0   
+E00A @0F70   32 00 00         STA   0   
+E00D @0F73          EEPOLL:      
+E00D @0F73   3A 00 00         LDA   0   
+E010 @0F76   FE F3            CPI   0f3h   
+E012 @0F78   CA 30 E0         JZ   nowren   
+E015 @0F7B   FE 00            CPI   0   
+E017 @0F7D   C2 0D E0         JNZ   eepoll   
+E01A @0F80                       ;eeprom write OK
+E01A @0F80                       ; 
+E01A @0F80   3E F3            MVI   a,0f3h   
+E01C @0F82   32 00 00         STA   0   
+E01F @0F85          EEPOLL2:      
+E01F @0F85   3A 00 00         LDA   0   
+E022 @0F88   FE 00            CPI   0   
+E024 @0F8A   C2 1F E0         JNZ   eepoll2   
+E027 @0F8D                       ; 
+E027 @0F8D                       ; 
+E027 @0F8D   C3 27 E0 G:      JMP   g   
+E02A @0F90                       ; 
+E02A @0F90          NOMONITOR:      
+E02A @0F90   21 27 10         LXI   h,msgmon   
+E02D @0F93                    ;*Macro unroll:  printstr
+E02D @0F93   DF               RST   3   
+E02E @0F94   05               DB   5   
+E02F @0F95   C7               RST   0   
+E030 @0F96          NOWREN:      
+E030 @0F96   21 36 10         LXI   h,msgwren   
+E033 @0F99                    ;*Macro unroll:  PRINTSTR  
+E033 @0F99   DF               RST   3   
+E034 @0F9A   05               DB   5   
+E035 @0F9B   C7               RST   0   
+E036 @0F9C                    .DEPHASE      
+0F9C                MEND:     EQU   $   
+0F9C                             ; 
+0F9C                             ;---- crc
+0F9C                             ; 
+0F9C                CRCF:        
+0F9C   11 00 00               LXI   D,0   ;INITIALIZE eRC
+0F9F                CRCF0:       
+0F9F   7E                     MOV   A,M   
+0FA0   23                     INX   H   
+0FA1   E5                     PUSH   H   
+0FA2   AB                     XRA   E   
+0FA3   6F                     MOV   L,A   
+0FA4   87                     ADD   A   
+0FA5   F5                     PUSH   PSW   
+0FA6   AD                     XRA   L   
+0FA7   6F                     MOV   L,A   
+0FA8   F1                     POP   PSW   
+0FA9   3E 00                  MVI   A,0   
+0FAB   EA B0 0F               JPE   CRCFl   
+0FAE   3E 03                  MVI   A,$03   
+0FB0                CRCFL:       
+0FB0   D2 B5 0F               JNC   CRCF2   
+0FB3   EE 02                  XRI   $02   
+0FB5                CRCF2:       
+0FB5   67                     MOV   H,A   
+0FB6   1F                     RAR      
+0FB7   29                     DAD   H   
+0FB8   29                     DAD   H   
+0FB9   29                     DAD   H   
+0FBA   29                     DAD   H   
+0FBB   29                     DAD   H   
+0FBC   29                     DAD   H   
+0FBD   B5                     ORA   L   
+0FBE   AA                     XRA   D   
+0FBF   5F                     MOV   E,A   
+0FC0   54                     MOV   D,H   
+0FC1   E1                     POP   H   
+0FC2   0B                     DCX   B   
+0FC3   78                     MOV   a,b   
+0FC4   B1                     ORA   c   
+0FC5   C2 9F 0F               JNZ   CRCF0   
+0FC8   C9                     RET      
+0FC9                HELLO:       
+0FC9   0D 0A 53 74 61 72 74 20 79 6F 75 72 20 48 45 58 20 66 69 6C 65 2C 20 77 69 6C 6C 20 62 65 20 73 61 76 65 64 20 61 74 20 38 30 30 30 68 0D 0A DB   $0d,$0a,"Start your HEX file, will be saved at 8000h",$0d,$0a   
+0FF8   45 6E 64 20 77 69 74 68 20 61 20 73 70 61 63 65 20 6B 65 79 2E 0D 8A .ISTR   "End with a space key.",$0d,$0a   
+100F   0D 0A 42 79 74 65 73 20 73 61 76 65 64 3A A0 MSGLEN:   .ISTR   $0d,$0a,"Bytes saved: "   
+101E   0D 0A 43 52 43 31 36 3A A0 MSGCRC:   .ISTR   $0d,$0a,"CRC16: "   
+1027   0D 0A 42 61 64 20 6D 6F 6E 69 74 6F 72 0D 8A MSGMON:   .ISTR   $0d,$0a,"Bad monitor",$0d,$0a   
+1036   0D 0A 45 45 50 20 57 72 69 74 65 20 44 69 73 61 62 6C 65 2E 20 50 6F 77 65 72 20 6F 66 66 2C 20 65 6E 61 62 6C 65 20 57 52 45 4E 20 61 6E 64 20 74 72 79 20 61 67 61 69 6E 21 0D 8A MSGWREN:   .ISTR   $0d,$0a,"EEP Write Disable. Power off, enable WREN and try again!",$0d,$0a   
+1072                             ; 
+1072                          .ENDBLOCK      
+1072                             ; 
+1072                             ;--- Operační paměť pro MONITOR - na konci RAM
+FF00                          .ORG   0FF00h   
+FF00                STACK:    EQU   $   
+FF00                RAMTOP:   EQU   $   
+FF00                BRKBYTE:   DS   1   
+FF01                BRKHL:    DS   2   
+FF03                BRKPC:    DS   2   
+FF05                BRKSP:    DS   2   
+FF07                BRKPSW:   DS   2   
+FF09                BRKBC:    DS   2   
+FF0B                BRKDE:    DS   2   
+FF0D                LASTKEY:   DS   1   
+FF0E                BUFA:     DS   2   
+FF10                RAMEND:   EQU   $   
+
+
+RESET:              0000 DEFINED AT LINE 6
+                    > USED AT LINE 49
+RST1:               0577 DEFINED AT LINE 124 IN module-basic.a80
+RST2:               051B DEFINED AT LINE 53 IN module-basic.a80
+RST3:               0523 DEFINED AT LINE 60 IN module-basic.a80
+RST4:               052B DEFINED AT LINE 67 IN module-basic.a80
+SYSCALL:            0028 DEFINED AT LINE 34
+                    > USED AT LINE 25
+SYSTAB:             0036 DEFINED AT LINE 48
+                    > USED AT LINE 37
+BRKPT:              004B DEFINED AT LINE 57
+                    > USED AT LINE 31
+BRKSTR:             007E DEFINED AT LINE 86
+                    > USED AT LINE 74
+ACIA:               00DE DEFINED AT LINE 92
+                    > USED AT LINE 93
+                    > USED AT LINE 94
+                    > USED AT LINE 95
+ACIAC:              00DE DEFINED AT LINE 93
+                    > USED AT LINE 172
+ACIAS:              00DE DEFINED AT LINE 94
+                    > USED AT LINE 109
+                    > USED AT LINE 143
+                    > USED AT LINE 159
+ACIAD:              00DF DEFINED AT LINE 95
+                    > USED AT LINE 113
+                    > USED AT LINE 146
+ACIA_TDRE:          0002 DEFINED AT LINE 97
+                    > USED AT LINE 110
+ACIA_RDRF:          0001 DEFINED AT LINE 98
+                    > USED AT LINE 144
+                    > USED AT LINE 160
+SEROUT:             008A DEFINED AT LINE 106
+                    > USED AT LINE 14
+                    > USED AT LINE 53
+                    > USED AT LINE 127
+                    > USED AT LINE 401
+                    > USED AT LINE 444
+                    > USED AT LINE 491
+                    > USED AT LINE 493
+                    > USED AT LINE 495
+                    > USED AT LINE 529
+                    > USED AT LINE 531
+                    > USED AT LINE 638
+                    > USED AT LINE 640
+SO_WAIT:            008B DEFINED AT LINE 108
+                    > USED AT LINE 111
+STROUT:             0096 DEFINED AT LINE 124
+                    > USED AT LINE 54
+                    > USED AT LINE 75
+                    > USED AT LINE 132
+                    > USED AT LINE 177
+                    > USED AT LINE 302
+                    > USED AT LINE 452
+                    > USED AT LINE 476
+                    > USED AT LINE 496
+                    > USED AT LINE 501
+                    > USED AT LINE 536
+SERIN:              00A4 DEFINED AT LINE 142
+                    > USED AT LINE 18
+                    > USED AT LINE 52
+                    > USED AT LINE 183
+                    > USED AT LINE 411
+                    > USED AT LINE 440
+                    > USED AT LINE 448
+                    > USED AT LINE 502
+                    > USED AT LINE 539
+                    > USED AT LINE 555
+                    > USED AT LINE 564
+                    > USED AT LINE 581
+SERST:              00AD DEFINED AT LINE 158
+                    > USED AT LINE 51
+COLD:               00B5 DEFINED AT LINE 169
+                    > USED AT LINE 10
+WARM:               00B9 DEFINED AT LINE 174
+                    > USED AT LINE 50
+WARMPRINT:          00BC DEFINED AT LINE 176
+                    > USED AT LINE 223
+                    > USED AT LINE 229
+                    > USED AT LINE 318
+MAIN:               0F66 DEFINED AT LINE 82 IN module-loader.a80
+                    > USED AT LINE 84
+                    > USED AT LINE 270
+                    > USED AT LINE 414
+                    > USED AT LINE 445
+                    > USED AT LINE 453
+                    > USED AT LINE 68 IN module-loader.a80
+                    > USED AT LINE 69 IN module-loader.a80
+MAINLOOP:           00C2 DEFINED AT LINE 182
+                    > USED AT LINE 184
+                    > USED AT LINE 188
+                    > USED AT LINE 190
+UPPERCASE:          00DE DEFINED AT LINE 194
+                    > USED AT LINE 192
+NOCMD:              010B DEFINED AT LINE 220
+CHELP:              0111 DEFINED AT LINE 227
+                    > USED AT LINE 214
+                    > USED AT LINE 216
+CREGS:              0117 DEFINED AT LINE 232
+                    > USED AT LINE 204
+MAINCR:             0161 DEFINED AT LINE 268
+                    > USED AT LINE 359
+                    > USED AT LINE 505
+                    > USED AT LINE 507
+                    > USED AT LINE 509
+                    > USED AT LINE 518
+CRSP:               0167 DEFINED AT LINE 272
+                    > USED AT LINE 258
+CRPC:               0169 DEFINED AT LINE 273
+                    > USED AT LINE 263
+CRONE:              016B DEFINED AT LINE 275
+                    > USED AT LINE 235
+                    > USED AT LINE 239
+                    > USED AT LINE 242
+                    > USED AT LINE 246
+                    > USED AT LINE 249
+                    > USED AT LINE 253
+                    > USED AT LINE 256
+CRTWO:              0184 DEFINED AT LINE 294
+                    > USED AT LINE 260
+                    > USED AT LINE 265
+CBRK:               019E DEFINED AT LINE 312
+                    > USED AT LINE 206
+BRKSET:             01AD DEFINED AT LINE 319
+                    > USED AT LINE 317
+CCONT:              01BD DEFINED AT LINE 321
+                    > USED AT LINE 208
+CMEM:               01D4 DEFINED AT LINE 338
+                    > USED AT LINE 196
+CMEM1:              01D7 DEFINED AT LINE 340
+                    > USED AT LINE 358
+CGO:                01F9 DEFINED AT LINE 361
+                    > USED AT LINE 198
+DUMPCHARS:          0010 DEFINED AT LINE 365
+                    > USED AT LINE 374
+                    > USED AT LINE 389
+CDUMP:              01FD DEFINED AT LINE 366
+                    > USED AT LINE 200
+CDUMPN:             0206 DEFINED AT LINE 372
+                    > USED AT LINE 416
+CDUMP1:             020F DEFINED AT LINE 379
+                    > USED AT LINE 384
+CDUMP2:             021E DEFINED AT LINE 391
+                    > USED AT LINE 404
+DUMPSANE:           0229 DEFINED AT LINE 398
+                    > USED AT LINE 394
+DUMPCHAR:           022B DEFINED AT LINE 400
+                    > USED AT LINE 396
+CDUMPKEY:           0239 DEFINED AT LINE 410
+                    > USED AT LINE 412
+                    > USED AT LINE 420
+CHEXIN:             024C DEFINED AT LINE 422
+                    > USED AT LINE 186
+HEXWRITER:          025A DEFINED AT LINE 432
+                    > USED AT LINE 437
+HEXCR:              0263 DEFINED AT LINE 439
+HEXLAST:            0273 DEFINED AT LINE 447
+                    > USED AT LINE 429
+                    > USED AT LINE 442
+                    > USED AT LINE 450
+CMODTEST:           0284 DEFINED AT LINE 456
+                    > USED AT LINE 487
+                    > USED AT LINE 519
+CMOD:               0298 DEFINED AT LINE 474
+                    > USED AT LINE 211
+CMNEXT:             02A3 DEFINED AT LINE 480
+                    > USED AT LINE 488
+                    > USED AT LINE 498
+CM1:                02AC DEFINED AT LINE 486
+CMDONE:             02CA DEFINED AT LINE 500
+                    > USED AT LINE 485
+CMDWAI:             02D0 DEFINED AT LINE 502
+                    > USED AT LINE 503
+CMDN:               02EB DEFINED AT LINE 513
+                    > USED AT LINE 520
+                    > USED AT LINE 522
+CMD1:               02F4 DEFINED AT LINE 519
+SERCRLF:            0301 DEFINED AT LINE 527
+                    > USED AT LINE 269
+                    > USED AT LINE 497
+GETADDR:            030B DEFINED AT LINE 534
+                    > USED AT LINE 313
+                    > USED AT LINE 339
+                    > USED AT LINE 362
+                    > USED AT LINE 367
+GETADDR1:           0314 DEFINED AT LINE 538
+                    > USED AT LINE 309
+                    > USED AT LINE 540
+                    > USED AT LINE 551
+GET1BYTE:           032B DEFINED AT LINE 554
+                    > USED AT LINE 423
+                    > USED AT LINE 427
+                    > USED AT LINE 433
+                    > USED AT LINE 556
+                    > USED AT LINE 571
+                    > USED AT LINE 573
+GET1B1:             0339 DEFINED AT LINE 563
+                    > USED AT LINE 565
+GET2BYTEREV:        0344 DEFINED AT LINE 570
+                    > USED AT LINE 425
+GETBYTE:            034D DEFINED AT LINE 578
+                    > USED AT LINE 290
+                    > USED AT LINE 353
+GETBYTE1:           034F DEFINED AT LINE 580
+                    > USED AT LINE 582
+                    > USED AT LINE 596
+ISHEX:              0369 DEFINED AT LINE 598
+                    > USED AT LINE 542
+                    > USED AT LINE 584
+ATOHEX:             0377 DEFINED AT LINE 610
+                    > USED AT LINE 544
+                    > USED AT LINE 557
+                    > USED AT LINE 566
+                    > USED AT LINE 587
+PRINTADDR:          037F DEFINED AT LINE 617
+                    > USED AT LINE 55
+                    > USED AT LINE 77
+                    > USED AT LINE 306
+                    > USED AT LINE 345
+                    > USED AT LINE 373
+PRINTHEX:           0384 DEFINED AT LINE 621
+                    > USED AT LINE 286
+                    > USED AT LINE 349
+                    > USED AT LINE 381
+                    > USED AT LINE 619
+PRINTHEX1:          0394 DEFINED AT LINE 632
+                    > USED AT LINE 630
+HELLO:              0FC9 DEFINED AT LINE 160 IN module-loader.a80
+                    > USED AT LINE 175
+                    > USED AT LINE 13 IN module-test.a80
+                    > USED AT LINE 28 IN module-loader.a80
+WHAT:               05C4 DEFINED AT LINE 178 IN module-basic.a80
+                    > USED AT LINE 221
+                    > USED AT LINE 1065 IN module-basic.a80
+MODS:               03CA DEFINED AT LINE 653
+                    > USED AT LINE 475
+MODSEL:             03E0 DEFINED AT LINE 655
+                    > USED AT LINE 500
+ADDR:               0407 DEFINED AT LINE 658
+                    > USED AT LINE 535
+DONE:               040C DEFINED AT LINE 661
+                    > USED AT LINE 451
+HELP:               0412 DEFINED AT LINE 663
+                    > USED AT LINE 228
+LAST:               04DD DEFINED AT LINE 677
+                    > USED AT LINE 478
+                    > USED AT LINE 512
+CR:                 000D DEFINED AT LINE 37 IN module-basic.a80
+                    > USED AT LINE 175 IN module-basic.a80
+                    > USED AT LINE 177 IN module-basic.a80
+                    > USED AT LINE 179 IN module-basic.a80
+                    > USED AT LINE 181 IN module-basic.a80
+                    > USED AT LINE 395 IN module-basic.a80
+                    > USED AT LINE 704 IN module-basic.a80
+                    > USED AT LINE 1054 IN module-basic.a80
+                    > USED AT LINE 1061 IN module-basic.a80
+                    > USED AT LINE 1183 IN module-basic.a80
+                    > USED AT LINE 1218 IN module-basic.a80
+                    > USED AT LINE 1227 IN module-basic.a80
+                    > USED AT LINE 1429 IN module-basic.a80
+                    > USED AT LINE 1433 IN module-basic.a80
+                    > USED AT LINE 1454 IN module-basic.a80
+LF:                 000A DEFINED AT LINE 38 IN module-basic.a80
+                    > USED AT LINE 1431 IN module-basic.a80
+START:              0511 DEFINED AT LINE 46 IN module-basic.a80
+                    > USED AT LINE 32 IN module-basic.a80
+                    > USED AT LINE 906 IN module-basic.a80
+                    > USED AT LINE 1416 IN module-basic.a80
+CRLF:               0519 DEFINED AT LINE 51 IN module-basic.a80
+                    > USED AT LINE 216 IN module-basic.a80
+                    > USED AT LINE 392 IN module-basic.a80
+                    > USED AT LINE 397 IN module-basic.a80
+                    > USED AT LINE 412 IN module-basic.a80
+                    > USED AT LINE 1151 IN module-basic.a80
+                    > USED AT LINE 1410 IN module-basic.a80
+OUTC:               051B DEFINED AT LINE 54 IN module-basic.a80
+                    > USED AT LINE 1088 IN module-basic.a80
+                    > USED AT LINE 1124 IN module-basic.a80
+                    > USED AT LINE 1130 IN module-basic.a80
+                    > USED AT LINE 1149 IN module-basic.a80
+                    > USED AT LINE 1217 IN module-basic.a80
+                    > USED AT LINE 1243 IN module-basic.a80
+                    > USED AT LINE 1244 IN module-basic.a80
+                    > USED AT LINE 1275 IN module-basic.a80
+                    > USED AT LINE 1286 IN module-basic.a80
+                    > USED AT LINE 1298 IN module-basic.a80
+                    > USED AT LINE 1432 IN module-basic.a80
+EXPR:               0523 DEFINED AT LINE 61 IN module-basic.a80
+                    > USED AT LINE 343 IN module-basic.a80
+                    > USED AT LINE 402 IN module-basic.a80
+                    > USED AT LINE 414 IN module-basic.a80
+                    > USED AT LINE 440 IN module-basic.a80
+                    > USED AT LINE 504 IN module-basic.a80
+                    > USED AT LINE 508 IN module-basic.a80
+                    > USED AT LINE 637 IN module-basic.a80
+                    > USED AT LINE 684 IN module-basic.a80
+                    > USED AT LINE 887 IN module-basic.a80
+                    > USED AT LINE 1038 IN module-basic.a80
+COMP:               052B DEFINED AT LINE 68 IN module-basic.a80
+                    > USED AT LINE 105 IN module-basic.a80
+                    > USED AT LINE 270 IN module-basic.a80
+                    > USED AT LINE 557 IN module-basic.a80
+                    > USED AT LINE 904 IN module-basic.a80
+                    > USED AT LINE 998 IN module-basic.a80
+                    > USED AT LINE 1164 IN module-basic.a80
+                    > USED AT LINE 1319 IN module-basic.a80
+RST5:               0533 DEFINED AT LINE 77 IN module-basic.a80
+IGNBLK:             0533 DEFINED AT LINE 78 IN module-basic.a80
+                    > USED AT LINE 94 IN module-basic.a80
+                    > USED AT LINE 127 IN module-basic.a80
+                    > USED AT LINE 144 IN module-basic.a80
+                    > USED AT LINE 230 IN module-basic.a80
+                    > USED AT LINE 1060 IN module-basic.a80
+                    > USED AT LINE 1554 IN module-basic.a80
+SS1:                0533 DEFINED AT LINE 79 IN module-basic.a80
+                    > USED AT LINE 83 IN module-basic.a80
+RST6:               053B DEFINED AT LINE 85 IN module-basic.a80
+FINISH:             053B DEFINED AT LINE 86 IN module-basic.a80
+                    > USED AT LINE 413 IN module-basic.a80
+                    > USED AT LINE 465 IN module-basic.a80
+                    > USED AT LINE 546 IN module-basic.a80
+                    > USED AT LINE 592 IN module-basic.a80
+                    > USED AT LINE 596 IN module-basic.a80
+                    > USED AT LINE 701 IN module-basic.a80
+                    > USED AT LINE 712 IN module-basic.a80
+RST7:               0543 DEFINED AT LINE 92 IN module-basic.a80
+TSTV:               0543 DEFINED AT LINE 93 IN module-basic.a80
+                    > USED AT LINE 548 IN module-basic.a80
+                    > USED AT LINE 656 IN module-basic.a80
+                    > USED AT LINE 660 IN module-basic.a80
+                    > USED AT LINE 873 IN module-basic.a80
+                    > USED AT LINE 1032 IN module-basic.a80
+TV1:                0567 DEFINED AT LINE 111 IN module-basic.a80
+                    > USED AT LINE 97 IN module-basic.a80
+TSTC:               0577 DEFINED AT LINE 125 IN module-basic.a80
+                    > USED AT LINE 389 IN module-basic.a80
+                    > USED AT LINE 394 IN module-basic.a80
+                    > USED AT LINE 399 IN module-basic.a80
+                    > USED AT LINE 407 IN module-basic.a80
+                    > USED AT LINE 697 IN module-basic.a80
+                    > USED AT LINE 708 IN module-basic.a80
+                    > USED AT LINE 781 IN module-basic.a80
+                    > USED AT LINE 786 IN module-basic.a80
+                    > USED AT LINE 790 IN module-basic.a80
+                    > USED AT LINE 806 IN module-basic.a80
+                    > USED AT LINE 815 IN module-basic.a80
+                    > USED AT LINE 842 IN module-basic.a80
+                    > USED AT LINE 884 IN module-basic.a80
+                    > USED AT LINE 888 IN module-basic.a80
+                    > USED AT LINE 1035 IN module-basic.a80
+                    > USED AT LINE 1048 IN module-basic.a80
+                    > USED AT LINE 1053 IN module-basic.a80
+                    > USED AT LINE 1222 IN module-basic.a80
+                    > USED AT LINE 1234 IN module-basic.a80
+                    > USED AT LINE 1239 IN module-basic.a80
+TC1:                057C DEFINED AT LINE 129 IN module-basic.a80
+TC2:                0587 DEFINED AT LINE 137 IN module-basic.a80
+                    > USED AT LINE 130 IN module-basic.a80
+TSTNUM:             058B DEFINED AT LINE 142 IN module-basic.a80
+                    > USED AT LINE 229 IN module-basic.a80
+                    > USED AT LINE 379 IN module-basic.a80
+                    > USED AT LINE 880 IN module-basic.a80
+TN1:                0592 DEFINED AT LINE 145 IN module-basic.a80
+                    > USED AT LINE 170 IN module-basic.a80
+QHOW:               05B5 DEFINED AT LINE 171 IN module-basic.a80
+                    > USED AT LINE 101 IN module-basic.a80
+                    > USED AT LINE 151 IN module-basic.a80
+                    > USED AT LINE 805 IN module-basic.a80
+                    > USED AT LINE 865 IN module-basic.a80
+                    > USED AT LINE 897 IN module-basic.a80
+                    > USED AT LINE 899 IN module-basic.a80
+                    > USED AT LINE 988 IN module-basic.a80
+                    > USED AT LINE 1157 IN module-basic.a80
+AHOW:               05B6 DEFINED AT LINE 172 IN module-basic.a80
+                    > USED AT LINE 347 IN module-basic.a80
+                    > USED AT LINE 443 IN module-basic.a80
+                    > USED AT LINE 832 IN module-basic.a80
+                    > USED AT LINE 838 IN module-basic.a80
+                    > USED AT LINE 856 IN module-basic.a80
+HOW:                05BC DEFINED AT LINE 174 IN module-basic.a80
+                    > USED AT LINE 172 IN module-basic.a80
+OK:                 05C1 DEFINED AT LINE 176 IN module-basic.a80
+                    > USED AT LINE 217 IN module-basic.a80
+SORRY:              05CA DEFINED AT LINE 180 IN module-basic.a80
+                    > USED AT LINE 1094 IN module-basic.a80
+RSTART:             05D0 DEFINED AT LINE 215 IN module-basic.a80
+                    > USED AT LINE 263 IN module-basic.a80
+                    > USED AT LINE 320 IN module-basic.a80
+                    > USED AT LINE 331 IN module-basic.a80
+                    > USED AT LINE 382 IN module-basic.a80
+                    > USED AT LINE 643 IN module-basic.a80
+                    > USED AT LINE 1079 IN module-basic.a80
+                    > USED AT LINE 1091 IN module-basic.a80
+                    > USED AT LINE 1420 IN module-basic.a80
+                    > USED AT LINE 1450 IN module-basic.a80
+ST1:                05D3 DEFINED AT LINE 216 IN module-basic.a80
+ST2:                05E3 DEFINED AT LINE 222 IN module-basic.a80
+                    > USED AT LINE 220 IN module-basic.a80
+ST3:                05EC DEFINED AT LINE 225 IN module-basic.a80
+                    > USED AT LINE 278 IN module-basic.a80
+ST4:                0623 DEFINED AT LINE 258 IN module-basic.a80
+                    > USED AT LINE 248 IN module-basic.a80
+NEW:                064C DEFINED AT LINE 315 IN module-basic.a80
+                    > USED AT LINE 41
+                    > USED AT LINE 42
+STOP:               0655 DEFINED AT LINE 319 IN module-basic.a80
+                    > USED AT LINE 41
+                    > USED AT LINE 42
+BYE:                065B DEFINED AT LINE 322 IN module-basic.a80
+                    > USED AT LINE 41
+                    > USED AT LINE 42
+RUN:                065F DEFINED AT LINE 326 IN module-basic.a80
+                    > USED AT LINE 41
+                    > USED AT LINE 42
+RUNNXL:             0665 DEFINED AT LINE 329 IN module-basic.a80
+                    > USED AT LINE 398 IN module-basic.a80
+                    > USED AT LINE 1057 IN module-basic.a80
+                    > USED AT LINE 1229 IN module-basic.a80
+RUNTSL:             066E DEFINED AT LINE 333 IN module-basic.a80
+                    > USED AT LINE 349 IN module-basic.a80
+                    > USED AT LINE 452 IN module-basic.a80
+                    > USED AT LINE 642 IN module-basic.a80
+RUNSML:             0675 DEFINED AT LINE 339 IN module-basic.a80
+                    > USED AT LINE 393 IN module-basic.a80
+                    > USED AT LINE 640 IN module-basic.a80
+                    > USED AT LINE 1052 IN module-basic.a80
+GOTO:               067E DEFINED AT LINE 343 IN module-basic.a80
+                    > USED AT LINE 41
+                    > USED AT LINE 42
+LIST:               068F DEFINED AT LINE 379 IN module-basic.a80
+                    > USED AT LINE 41
+                    > USED AT LINE 42
+LS1:                0698 DEFINED AT LINE 382 IN module-basic.a80
+                    > USED AT LINE 386 IN module-basic.a80
+PRINT:              06A7 DEFINED AT LINE 388 IN module-basic.a80
+                    > USED AT LINE 41
+                    > USED AT LINE 42
+PR2:                06B4 DEFINED AT LINE 394 IN module-basic.a80
+                    > USED AT LINE 391 IN module-basic.a80
+PR0:                06BF DEFINED AT LINE 399 IN module-basic.a80
+                    > USED AT LINE 396 IN module-basic.a80
+                    > USED AT LINE 411 IN module-basic.a80
+PR1:                06CB DEFINED AT LINE 405 IN module-basic.a80
+                    > USED AT LINE 401 IN module-basic.a80
+PR3:                06D1 DEFINED AT LINE 407 IN module-basic.a80
+                    > USED AT LINE 404 IN module-basic.a80
+                    > USED AT LINE 418 IN module-basic.a80
+PR6:                06DC DEFINED AT LINE 412 IN module-basic.a80
+                    > USED AT LINE 409 IN module-basic.a80
+PR8:                06E2 DEFINED AT LINE 414 IN module-basic.a80
+                    > USED AT LINE 406 IN module-basic.a80
+GOSUB:              06ED DEFINED AT LINE 439 IN module-basic.a80
+                    > USED AT LINE 41
+                    > USED AT LINE 42
+RETURN:             070F DEFINED AT LINE 453 IN module-basic.a80
+                    > USED AT LINE 41
+                    > USED AT LINE 42
+FOR:                072A DEFINED AT LINE 498 IN module-basic.a80
+                    > USED AT LINE 41
+                    > USED AT LINE 42
+FR1:                073A DEFINED AT LINE 504 IN module-basic.a80
+                    > USED AT LINE 41
+                    > USED AT LINE 42
+FR2:                0746 DEFINED AT LINE 508 IN module-basic.a80
+                    > USED AT LINE 41
+                    > USED AT LINE 42
+FR3:                074C DEFINED AT LINE 510 IN module-basic.a80
+                    > USED AT LINE 41
+                    > USED AT LINE 42
+FR4:                074F DEFINED AT LINE 511 IN module-basic.a80
+                    > USED AT LINE 509 IN module-basic.a80
+FR5:                0752 DEFINED AT LINE 512 IN module-basic.a80
+FR7:                0767 DEFINED AT LINE 523 IN module-basic.a80
+                    > USED AT LINE 531 IN module-basic.a80
+                    > USED AT LINE 534 IN module-basic.a80
+FR8:                0788 DEFINED AT LINE 544 IN module-basic.a80
+                    > USED AT LINE 527 IN module-basic.a80
+NEXT:               078F DEFINED AT LINE 548 IN module-basic.a80
+                    > USED AT LINE 41
+                    > USED AT LINE 42
+NX0:                0798 DEFINED AT LINE 551 IN module-basic.a80
+                    > USED AT LINE 562 IN module-basic.a80
+NX3:                07B2 DEFINED AT LINE 563 IN module-basic.a80
+                    > USED AT LINE 558 IN module-basic.a80
+NX4:                07C4 DEFINED AT LINE 575 IN module-basic.a80
+                    > USED AT LINE 572 IN module-basic.a80
+NX1:                07D4 DEFINED AT LINE 585 IN module-basic.a80
+                    > USED AT LINE 583 IN module-basic.a80
+NX5:                07E8 DEFINED AT LINE 593 IN module-basic.a80
+                    > USED AT LINE 574 IN module-basic.a80
+NX2:                07EA DEFINED AT LINE 595 IN module-basic.a80
+                    > USED AT LINE 587 IN module-basic.a80
+REM:                07F0 DEFINED AT LINE 634 IN module-basic.a80
+                    > USED AT LINE 41
+                    > USED AT LINE 42
+IFF:                07F4 DEFINED AT LINE 637 IN module-basic.a80
+                    > USED AT LINE 41
+                    > USED AT LINE 42
+INPERR:             0805 DEFINED AT LINE 645 IN module-basic.a80
+                    > USED AT LINE 1082 IN module-basic.a80
+INPUT:              080F DEFINED AT LINE 652 IN module-basic.a80
+                    > USED AT LINE 41
+                    > USED AT LINE 42
+IP1:                080F DEFINED AT LINE 653 IN module-basic.a80
+                    > USED AT LINE 675 IN module-basic.a80
+                    > USED AT LINE 700 IN module-basic.a80
+IP2:                081F DEFINED AT LINE 659 IN module-basic.a80
+                    > USED AT LINE 655 IN module-basic.a80
+IP3:                0831 DEFINED AT LINE 671 IN module-basic.a80
+                    > USED AT LINE 658 IN module-basic.a80
+IP4:                085D DEFINED AT LINE 696 IN module-basic.a80
+                    > USED AT LINE 657 IN module-basic.a80
+IP5:                0866 DEFINED AT LINE 701 IN module-basic.a80
+                    > USED AT LINE 699 IN module-basic.a80
+DEFLT:              0869 DEFINED AT LINE 703 IN module-basic.a80
+                    > USED AT LINE 41
+                    > USED AT LINE 42
+LET:                086F DEFINED AT LINE 707 IN module-basic.a80
+                    > USED AT LINE 711 IN module-basic.a80
+                    > USED AT LINE 41
+                    > USED AT LINE 42
+LT1:                087A DEFINED AT LINE 712 IN module-basic.a80
+                    > USED AT LINE 705 IN module-basic.a80
+                    > USED AT LINE 710 IN module-basic.a80
+EXPR1:              087D DEFINED AT LINE 735 IN module-basic.a80
+                    > USED AT LINE 64 IN module-basic.a80
+XP11:               0883 DEFINED AT LINE 737 IN module-basic.a80
+                    > USED AT LINE 41
+                    > USED AT LINE 42
+XP12:               0889 DEFINED AT LINE 741 IN module-basic.a80
+                    > USED AT LINE 41
+                    > USED AT LINE 42
+XP13:               088F DEFINED AT LINE 745 IN module-basic.a80
+                    > USED AT LINE 41
+                    > USED AT LINE 42
+XP14:               0896 DEFINED AT LINE 750 IN module-basic.a80
+                    > USED AT LINE 41
+                    > USED AT LINE 42
+XP15:               089E DEFINED AT LINE 756 IN module-basic.a80
+                    > USED AT LINE 41
+                    > USED AT LINE 42
+XP16:               08A4 DEFINED AT LINE 760 IN module-basic.a80
+                    > USED AT LINE 41
+                    > USED AT LINE 42
+XP17:               08AA DEFINED AT LINE 764 IN module-basic.a80
+                    > USED AT LINE 41
+                    > USED AT LINE 42
+XP18:               08AC DEFINED AT LINE 766 IN module-basic.a80
+                    > USED AT LINE 737 IN module-basic.a80
+                    > USED AT LINE 741 IN module-basic.a80
+                    > USED AT LINE 745 IN module-basic.a80
+                    > USED AT LINE 750 IN module-basic.a80
+                    > USED AT LINE 756 IN module-basic.a80
+                    > USED AT LINE 760 IN module-basic.a80
+EXPR2:              08C1 DEFINED AT LINE 781 IN module-basic.a80
+                    > USED AT LINE 62 IN module-basic.a80
+                    > USED AT LINE 772 IN module-basic.a80
+XP21:               08CC DEFINED AT LINE 786 IN module-basic.a80
+                    > USED AT LINE 783 IN module-basic.a80
+XP22:               08D1 DEFINED AT LINE 789 IN module-basic.a80
+                    > USED AT LINE 788 IN module-basic.a80
+XP23:               08D4 DEFINED AT LINE 790 IN module-basic.a80
+                    > USED AT LINE 802 IN module-basic.a80
+                    > USED AT LINE 804 IN module-basic.a80
+XP24:               08DD DEFINED AT LINE 795 IN module-basic.a80
+                    > USED AT LINE 812 IN module-basic.a80
+XP25:               08EE DEFINED AT LINE 806 IN module-basic.a80
+                    > USED AT LINE 792 IN module-basic.a80
+XP26:               08F3 DEFINED AT LINE 809 IN module-basic.a80
+                    > USED AT LINE 785 IN module-basic.a80
+EXPR3:              08FD DEFINED AT LINE 814 IN module-basic.a80
+                    > USED AT LINE 789 IN module-basic.a80
+                    > USED AT LINE 794 IN module-basic.a80
+                    > USED AT LINE 810 IN module-basic.a80
+XP31:               0900 DEFINED AT LINE 815 IN module-basic.a80
+                    > USED AT LINE 869 IN module-basic.a80
+XP32:               091F DEFINED AT LINE 833 IN module-basic.a80
+                    > USED AT LINE 828 IN module-basic.a80
+XP33:               0927 DEFINED AT LINE 837 IN module-basic.a80
+                    > USED AT LINE 840 IN module-basic.a80
+XP34:               0932 DEFINED AT LINE 842 IN module-basic.a80
+                    > USED AT LINE 817 IN module-basic.a80
+XP35:               0953 DEFINED AT LINE 862 IN module-basic.a80
+                    > USED AT LINE 836 IN module-basic.a80
+                    > USED AT LINE 841 IN module-basic.a80
+EXPR4:              0961 DEFINED AT LINE 871 IN module-basic.a80
+                    > USED AT LINE 814 IN module-basic.a80
+                    > USED AT LINE 819 IN module-basic.a80
+                    > USED AT LINE 846 IN module-basic.a80
+XP40:               0967 DEFINED AT LINE 873 IN module-basic.a80
+                    > USED AT LINE 41
+                    > USED AT LINE 42
+XP41:               0972 DEFINED AT LINE 880 IN module-basic.a80
+                    > USED AT LINE 874 IN module-basic.a80
+PARN:               0978 DEFINED AT LINE 884 IN module-basic.a80
+                    > USED AT LINE 99 IN module-basic.a80
+                    > USED AT LINE 894 IN module-basic.a80
+                    > USED AT LINE 920 IN module-basic.a80
+XP42:               0985 DEFINED AT LINE 891 IN module-basic.a80
+                    > USED AT LINE 808 IN module-basic.a80
+                    > USED AT LINE 844 IN module-basic.a80
+XP43:               0986 DEFINED AT LINE 892 IN module-basic.a80
+                    > USED AT LINE 886 IN module-basic.a80
+                    > USED AT LINE 890 IN module-basic.a80
+RND:                0989 DEFINED AT LINE 894 IN module-basic.a80
+                    > USED AT LINE 41
+                    > USED AT LINE 42
+RA1:                09A6 DEFINED AT LINE 907 IN module-basic.a80
+                    > USED AT LINE 905 IN module-basic.a80
+ABS:                09B6 DEFINED AT LINE 920 IN module-basic.a80
+                    > USED AT LINE 41
+                    > USED AT LINE 42
+SIZE:               09BF DEFINED AT LINE 926 IN module-basic.a80
+                    > USED AT LINE 104 IN module-basic.a80
+                    > USED AT LINE 41
+                    > USED AT LINE 42
+DIVIDE:             09CC DEFINED AT LINE 951 IN module-basic.a80
+                    > USED AT LINE 858 IN module-basic.a80
+                    > USED AT LINE 914 IN module-basic.a80
+                    > USED AT LINE 1259 IN module-basic.a80
+DV1:                09D7 DEFINED AT LINE 959 IN module-basic.a80
+                    > USED AT LINE 954 IN module-basic.a80
+DV2:                09D9 DEFINED AT LINE 960 IN module-basic.a80
+                    > USED AT LINE 962 IN module-basic.a80
+SUBDE:              09E2 DEFINED AT LINE 966 IN module-basic.a80
+                    > USED AT LINE 108 IN module-basic.a80
+                    > USED AT LINE 930 IN module-basic.a80
+                    > USED AT LINE 961 IN module-basic.a80
+CHKSGN:             09E9 DEFINED AT LINE 974 IN module-basic.a80
+                    > USED AT LINE 821 IN module-basic.a80
+                    > USED AT LINE 823 IN module-basic.a80
+                    > USED AT LINE 848 IN module-basic.a80
+                    > USED AT LINE 850 IN module-basic.a80
+                    > USED AT LINE 922 IN module-basic.a80
+                    > USED AT LINE 1250 IN module-basic.a80
+CHGSGN:             09EC DEFINED AT LINE 978 IN module-basic.a80
+                    > USED AT LINE 811 IN module-basic.a80
+                    > USED AT LINE 868 IN module-basic.a80
+                    > USED AT LINE 1357 IN module-basic.a80
+CKHLDE:             09FE DEFINED AT LINE 994 IN module-basic.a80
+                    > USED AT LINE 585 IN module-basic.a80
+                    > USED AT LINE 775 IN module-basic.a80
+CK1:                0A04 DEFINED AT LINE 998 IN module-basic.a80
+                    > USED AT LINE 996 IN module-basic.a80
+SETVAL:             0A08 DEFINED AT LINE 1032 IN module-basic.a80
+                    > USED AT LINE 499 IN module-basic.a80
+                    > USED AT LINE 707 IN module-basic.a80
+SV1:                0A1E DEFINED AT LINE 1046 IN module-basic.a80
+                    > USED AT LINE 1037 IN module-basic.a80
+FIN:                0A21 DEFINED AT LINE 1048 IN module-basic.a80
+                    > USED AT LINE 88 IN module-basic.a80
+                    > USED AT LINE 410 IN module-basic.a80
+FI1:                0A2A DEFINED AT LINE 1053 IN module-basic.a80
+                    > USED AT LINE 1050 IN module-basic.a80
+FI2:                0A33 DEFINED AT LINE 1058 IN module-basic.a80
+                    > USED AT LINE 1055 IN module-basic.a80
+ENDCHK:             0A34 DEFINED AT LINE 1060 IN module-basic.a80
+                    > USED AT LINE 315 IN module-basic.a80
+                    > USED AT LINE 319 IN module-basic.a80
+                    > USED AT LINE 322 IN module-basic.a80
+                    > USED AT LINE 326 IN module-basic.a80
+                    > USED AT LINE 345 IN module-basic.a80
+                    > USED AT LINE 380 IN module-basic.a80
+                    > USED AT LINE 453 IN module-basic.a80
+QWHAT:              0A3A DEFINED AT LINE 1064 IN module-basic.a80
+                    > USED AT LINE 89 IN module-basic.a80
+                    > USED AT LINE 457 IN module-basic.a80
+                    > USED AT LINE 549 IN module-basic.a80
+                    > USED AT LINE 661 IN module-basic.a80
+                    > USED AT LINE 892 IN module-basic.a80
+                    > USED AT LINE 1033 IN module-basic.a80
+                    > USED AT LINE 1046 IN module-basic.a80
+                    > USED AT LINE 41
+                    > USED AT LINE 42
+AWHAT:              0A3B DEFINED AT LINE 1065 IN module-basic.a80
+                    > USED AT LINE 556 IN module-basic.a80
+ERROR:              0A3E DEFINED AT LINE 1066 IN module-basic.a80
+                    > USED AT LINE 173 IN module-basic.a80
+                    > USED AT LINE 1095 IN module-basic.a80
+QSORRY:             0A69 DEFINED AT LINE 1093 IN module-basic.a80
+                    > USED AT LINE 271 IN module-basic.a80
+                    > USED AT LINE 1360 IN module-basic.a80
+ASORRY:             0A6A DEFINED AT LINE 1094 IN module-basic.a80
+                    > USED AT LINE 106 IN module-basic.a80
+GETLN:              0A70 DEFINED AT LINE 1124 IN module-basic.a80
+                    > USED AT LINE 226 IN module-basic.a80
+                    > USED AT LINE 682 IN module-basic.a80
+                    > USED AT LINE 1153 IN module-basic.a80
+GL1:                0A76 DEFINED AT LINE 1126 IN module-basic.a80
+                    > USED AT LINE 1127 IN module-basic.a80
+                    > USED AT LINE 1132 IN module-basic.a80
+                    > USED AT LINE 1134 IN module-basic.a80
+                    > USED AT LINE 1143 IN module-basic.a80
+                    > USED AT LINE 1150 IN module-basic.a80
+GL3:                0A9D DEFINED AT LINE 1144 IN module-basic.a80
+                    > USED AT LINE 1129 IN module-basic.a80
+GL4:                0AAC DEFINED AT LINE 1151 IN module-basic.a80
+                    > USED AT LINE 1136 IN module-basic.a80
+                    > USED AT LINE 1146 IN module-basic.a80
+FNDLN:              0AB4 DEFINED AT LINE 1155 IN module-basic.a80
+                    > USED AT LINE 246 IN module-basic.a80
+                    > USED AT LINE 346 IN module-basic.a80
+                    > USED AT LINE 381 IN module-basic.a80
+                    > USED AT LINE 442 IN module-basic.a80
+FNDLP:              0ABC DEFINED AT LINE 1160 IN module-basic.a80
+                    > USED AT LINE 330 IN module-basic.a80
+                    > USED AT LINE 385 IN module-basic.a80
+FL1:                0ABC DEFINED AT LINE 1161 IN module-basic.a80
+                    > USED AT LINE 1186 IN module-basic.a80
+FNDNXT:             0AD2 DEFINED AT LINE 1178 IN module-basic.a80
+                    > USED AT LINE 250 IN module-basic.a80
+FL2:                0AD3 DEFINED AT LINE 1180 IN module-basic.a80
+                    > USED AT LINE 1173 IN module-basic.a80
+                    > USED AT LINE 1184 IN module-basic.a80
+FNDSKP:             0AD4 DEFINED AT LINE 1182 IN module-basic.a80
+                    > USED AT LINE 641 IN module-basic.a80
+PRTSTG:             0ADE DEFINED AT LINE 1212 IN module-basic.a80
+                    > USED AT LINE 219 IN module-basic.a80
+                    > USED AT LINE 667 IN module-basic.a80
+                    > USED AT LINE 1067 IN module-basic.a80
+                    > USED AT LINE 1090 IN module-basic.a80
+                    > USED AT LINE 1226 IN module-basic.a80
+                    > USED AT LINE 1300 IN module-basic.a80
+                    > USED AT LINE 1415 IN module-basic.a80
+PS1:                0ADF DEFINED AT LINE 1213 IN module-basic.a80
+                    > USED AT LINE 1219 IN module-basic.a80
+QTSTG:              0AEC DEFINED AT LINE 1222 IN module-basic.a80
+                    > USED AT LINE 405 IN module-basic.a80
+                    > USED AT LINE 654 IN module-basic.a80
+QT1:                0AF3 DEFINED AT LINE 1226 IN module-basic.a80
+                    > USED AT LINE 1238 IN module-basic.a80
+QT2:                0AFC DEFINED AT LINE 1230 IN module-basic.a80
+                    > USED AT LINE 1246 IN module-basic.a80
+QT3:                0B00 DEFINED AT LINE 1234 IN module-basic.a80
+                    > USED AT LINE 1224 IN module-basic.a80
+QT4:                0B0A DEFINED AT LINE 1239 IN module-basic.a80
+                    > USED AT LINE 1236 IN module-basic.a80
+QT5:                0B1B DEFINED AT LINE 1247 IN module-basic.a80
+                    > USED AT LINE 1241 IN module-basic.a80
+PRTNUM:             0B1C DEFINED AT LINE 1249 IN module-basic.a80
+                    > USED AT LINE 416 IN module-basic.a80
+                    > USED AT LINE 1296 IN module-basic.a80
+PN1:                0B27 DEFINED AT LINE 1254 IN module-basic.a80
+                    > USED AT LINE 1251 IN module-basic.a80
+PN2:                0B2E DEFINED AT LINE 1259 IN module-basic.a80
+                    > USED AT LINE 1268 IN module-basic.a80
+PN3:                0B3E DEFINED AT LINE 1269 IN module-basic.a80
+                    > USED AT LINE 1262 IN module-basic.a80
+PN4:                0B3F DEFINED AT LINE 1270 IN module-basic.a80
+                    > USED AT LINE 1276 IN module-basic.a80
+PN5:                0B4D DEFINED AT LINE 1277 IN module-basic.a80
+                    > USED AT LINE 1273 IN module-basic.a80
+PN6:                0B53 DEFINED AT LINE 1281 IN module-basic.a80
+                    > USED AT LINE 1287 IN module-basic.a80
+PRTLN:              0B60 DEFINED AT LINE 1289 IN module-basic.a80
+                    > USED AT LINE 383 IN module-basic.a80
+                    > USED AT LINE 1083 IN module-basic.a80
+MVUP:               0B75 DEFINED AT LINE 1319 IN module-basic.a80
+                    > USED AT LINE 254 IN module-basic.a80
+                    > USED AT LINE 277 IN module-basic.a80
+                    > USED AT LINE 1325 IN module-basic.a80
+MVDOWN:             0B80 DEFINED AT LINE 1327 IN module-basic.a80
+                    > USED AT LINE 274 IN module-basic.a80
+                    > USED AT LINE 542 IN module-basic.a80
+                    > USED AT LINE 1337 IN module-basic.a80
+MD1:                0B88 DEFINED AT LINE 1333 IN module-basic.a80
+                    > USED AT LINE 1329 IN module-basic.a80
+POPA:               0B8F DEFINED AT LINE 1339 IN module-basic.a80
+                    > USED AT LINE 464 IN module-basic.a80
+                    > USED AT LINE 560 IN module-basic.a80
+                    > USED AT LINE 595 IN module-basic.a80
+PP1:                0BA9 DEFINED AT LINE 1353 IN module-basic.a80
+                    > USED AT LINE 1344 IN module-basic.a80
+PUSHA:              0BAB DEFINED AT LINE 1356 IN module-basic.a80
+                    > USED AT LINE 439 IN module-basic.a80
+                    > USED AT LINE 498 IN module-basic.a80
+PU1:                0BD1 DEFINED AT LINE 1374 IN module-basic.a80
+                    > USED AT LINE 1364 IN module-basic.a80
+ACIA_C:             00DE DEFINED AT LINE 1400 IN module-basic.a80
+                    > USED AT LINE 1424 IN module-basic.a80
+                    > USED AT LINE 1436 IN module-basic.a80
+ACIA_D:             00DF DEFINED AT LINE 1401 IN module-basic.a80
+                    > USED AT LINE 1428 IN module-basic.a80
+                    > USED AT LINE 1440 IN module-basic.a80
+INIT:               0BD4 DEFINED AT LINE 1403 IN module-basic.a80
+                    > USED AT LINE 48 IN module-basic.a80
+PATLOP:             0BE1 DEFINED AT LINE 1409 IN module-basic.a80
+                    > USED AT LINE 1412 IN module-basic.a80
+OC2:                0BFE DEFINED AT LINE 1421 IN module-basic.a80
+                    > USED AT LINE 58 IN module-basic.a80
+OC3:                0C03 DEFINED AT LINE 1424 IN module-basic.a80
+                    > USED AT LINE 1421 IN module-basic.a80
+                    > USED AT LINE 1426 IN module-basic.a80
+CHKIO:              0C18 DEFINED AT LINE 1436 IN module-basic.a80
+                    > USED AT LINE 339 IN module-basic.a80
+                    > USED AT LINE 384 IN module-basic.a80
+                    > USED AT LINE 1126 IN module-basic.a80
+                    > USED AT LINE 1447 IN module-basic.a80
+CI1:                0C31 DEFINED AT LINE 1448 IN module-basic.a80
+                    > USED AT LINE 1443 IN module-basic.a80
+MSG1:               0C37 DEFINED AT LINE 1452 IN module-basic.a80
+                    > USED AT LINE 1414 IN module-basic.a80
+TAB1:               0C42 DEFINED AT LINE 1482 IN module-basic.a80
+                    > USED AT LINE 1551 IN module-basic.a80
+TAB2:               0C57 DEFINED AT LINE 1492 IN module-basic.a80
+                    > USED AT LINE 340 IN module-basic.a80
+TAB4:               0C9B DEFINED AT LINE 1517 IN module-basic.a80
+                    > USED AT LINE 871 IN module-basic.a80
+TAB5:               0CAD DEFINED AT LINE 1526 IN module-basic.a80
+                    > USED AT LINE 502 IN module-basic.a80
+TAB6:               0CB3 DEFINED AT LINE 1531 IN module-basic.a80
+                    > USED AT LINE 506 IN module-basic.a80
+TAB8:               0CBB DEFINED AT LINE 1536 IN module-basic.a80
+                    > USED AT LINE 735 IN module-basic.a80
+DIRECT:             0CD1 DEFINED AT LINE 1551 IN module-basic.a80
+                    > USED AT LINE 234 IN module-basic.a80
+EXEC:               0CD4 DEFINED AT LINE 1553 IN module-basic.a80
+                    > USED AT LINE 341 IN module-basic.a80
+                    > USED AT LINE 503 IN module-basic.a80
+                    > USED AT LINE 507 IN module-basic.a80
+                    > USED AT LINE 736 IN module-basic.a80
+                    > USED AT LINE 872 IN module-basic.a80
+EX0:                0CD4 DEFINED AT LINE 1554 IN module-basic.a80
+                    > USED AT LINE 1572 IN module-basic.a80
+EX1:                0CD8 DEFINED AT LINE 1556 IN module-basic.a80
+                    > USED AT LINE 1562 IN module-basic.a80
+EX2:                0CEB DEFINED AT LINE 1567 IN module-basic.a80
+                    > USED AT LINE 1569 IN module-basic.a80
+EX3:                0CF5 DEFINED AT LINE 1573 IN module-basic.a80
+                    > USED AT LINE 1559 IN module-basic.a80
+EX4:                0CF7 DEFINED AT LINE 1574 IN module-basic.a80
+                    > USED AT LINE 1576 IN module-basic.a80
+EX5:                0CFC DEFINED AT LINE 1577 IN module-basic.a80
+                    > USED AT LINE 1566 IN module-basic.a80
+LSTROM:             0D04 DEFINED AT LINE 1585 IN module-basic.a80
+                    > USED AT LINE 903 IN module-basic.a80
+                    > USED AT LINE 1612 IN module-basic.a80
+OCSW:               8000 DEFINED AT LINE 1588 IN module-basic.a80
+                    > USED AT LINE 56 IN module-basic.a80
+                    > USED AT LINE 1403 IN module-basic.a80
+                    > USED AT LINE 1444 IN module-basic.a80
+                    > USED AT LINE 1446 IN module-basic.a80
+CURRNT:             8001 DEFINED AT LINE 1589 IN module-basic.a80
+                    > USED AT LINE 221 IN module-basic.a80
+                    > USED AT LINE 334 IN module-basic.a80
+                    > USED AT LINE 444 IN module-basic.a80
+                    > USED AT LINE 462 IN module-basic.a80
+                    > USED AT LINE 512 IN module-basic.a80
+                    > USED AT LINE 589 IN module-basic.a80
+                    > USED AT LINE 648 IN module-basic.a80
+                    > USED AT LINE 673 IN module-basic.a80
+                    > USED AT LINE 676 IN module-basic.a80
+                    > USED AT LINE 694 IN module-basic.a80
+                    > USED AT LINE 1073 IN module-basic.a80
+STKGOS:             8003 DEFINED AT LINE 1590 IN module-basic.a80
+                    > USED AT LINE 224 IN module-basic.a80
+                    > USED AT LINE 446 IN module-basic.a80
+                    > USED AT LINE 451 IN module-basic.a80
+                    > USED AT LINE 454 IN module-basic.a80
+                    > USED AT LINE 460 IN module-basic.a80
+VARNXT:             8005 DEFINED AT LINE 1591 IN module-basic.a80
+                    > USED AT LINE 550 IN module-basic.a80
+                    > USED AT LINE 561 IN module-basic.a80
+STKINP:             8007 DEFINED AT LINE 1592 IN module-basic.a80
+                    > USED AT LINE 645 IN module-basic.a80
+                    > USED AT LINE 679 IN module-basic.a80
+LOPVAR:             8009 DEFINED AT LINE 1593 IN module-basic.a80
+                    > USED AT LINE 223 IN module-basic.a80
+                    > USED AT LINE 449 IN module-basic.a80
+                    > USED AT LINE 501 IN module-basic.a80
+                    > USED AT LINE 517 IN module-basic.a80
+                    > USED AT LINE 553 IN module-basic.a80
+                    > USED AT LINE 576 IN module-basic.a80
+                    > USED AT LINE 1341 IN module-basic.a80
+                    > USED AT LINE 1361 IN module-basic.a80
+                    > USED AT LINE 1373 IN module-basic.a80
+LOPINC:             800B DEFINED AT LINE 1594 IN module-basic.a80
+                    > USED AT LINE 511 IN module-basic.a80
+                    > USED AT LINE 566 IN module-basic.a80
+                    > USED AT LINE 1346 IN module-basic.a80
+                    > USED AT LINE 1371 IN module-basic.a80
+LOPLMT:             800D DEFINED AT LINE 1595 IN module-basic.a80
+                    > USED AT LINE 505 IN module-basic.a80
+                    > USED AT LINE 580 IN module-basic.a80
+                    > USED AT LINE 1348 IN module-basic.a80
+                    > USED AT LINE 1369 IN module-basic.a80
+LOPLN:              800F DEFINED AT LINE 1596 IN module-basic.a80
+                    > USED AT LINE 513 IN module-basic.a80
+                    > USED AT LINE 588 IN module-basic.a80
+                    > USED AT LINE 1350 IN module-basic.a80
+                    > USED AT LINE 1367 IN module-basic.a80
+LOPPT:              8011 DEFINED AT LINE 1597 IN module-basic.a80
+                    > USED AT LINE 515 IN module-basic.a80
+                    > USED AT LINE 544 IN module-basic.a80
+                    > USED AT LINE 590 IN module-basic.a80
+                    > USED AT LINE 1352 IN module-basic.a80
+                    > USED AT LINE 1365 IN module-basic.a80
+RANPNT:             8013 DEFINED AT LINE 1598 IN module-basic.a80
+                    > USED AT LINE 902 IN module-basic.a80
+                    > USED AT LINE 910 IN module-basic.a80
+                    > USED AT LINE 1417 IN module-basic.a80
+TXTUNF:             8015 DEFINED AT LINE 1599 IN module-basic.a80
+                    > USED AT LINE 253 IN module-basic.a80
+                    > USED AT LINE 257 IN module-basic.a80
+                    > USED AT LINE 259 IN module-basic.a80
+                    > USED AT LINE 272 IN module-basic.a80
+                    > USED AT LINE 317 IN module-basic.a80
+                    > USED AT LINE 926 IN module-basic.a80
+                    > USED AT LINE 1162 IN module-basic.a80
+                    > USED AT LINE 1419 IN module-basic.a80
+TXTBGN:             8017 DEFINED AT LINE 1600 IN module-basic.a80
+                    > USED AT LINE 316 IN module-basic.a80
+                    > USED AT LINE 327 IN module-basic.a80
+                    > USED AT LINE 1158 IN module-basic.a80
+                    > USED AT LINE 1418 IN module-basic.a80
+TXTEND:             FC00 DEFINED AT LINE 1603 IN module-basic.a80
+                    > USED AT LINE 269 IN module-basic.a80
+VARBGN:             FC00 DEFINED AT LINE 1604 IN module-basic.a80
+                    > USED AT LINE 107 IN module-basic.a80
+                    > USED AT LINE 115 IN module-basic.a80
+                    > USED AT LINE 929 IN module-basic.a80
+BUFFER:             FC37 DEFINED AT LINE 1605 IN module-basic.a80
+                    > USED AT LINE 228 IN module-basic.a80
+                    > USED AT LINE 683 IN module-basic.a80
+                    > USED AT LINE 1125 IN module-basic.a80
+                    > USED AT LINE 1145 IN module-basic.a80
+BUFEND:             FC77 DEFINED AT LINE 1606 IN module-basic.a80
+                    > USED AT LINE 1142 IN module-basic.a80
+STKLMT:             FC78 DEFINED AT LINE 1607 IN module-basic.a80
+                    > USED AT LINE 1356 IN module-basic.a80
+STACK:              FF00 DEFINED AT LINE 684
+                    > USED AT LINE 8
+                    > USED AT LINE 46 IN module-basic.a80
+                    > USED AT LINE 215 IN module-basic.a80
+TESTMOD:            0F11 DEFINED AT LINE 27 IN module-loader.a80
+                    > USED AT LINE 6 IN module-test.a80
+                    > USED AT LINE 6 IN module-loader.a80
+MSTORE:             0F19 DEFINED AT LINE 31 IN module-loader.a80
+                    > USED AT LINE 33 IN module-loader.a80
+                    > USED AT LINE 44 IN module-loader.a80
+MGO:                0F2A DEFINED AT LINE 40 IN module-loader.a80
+                    > USED AT LINE 38 IN module-loader.a80
+MREADY:             0F31 DEFINED AT LINE 45 IN module-loader.a80
+                    > USED AT LINE 35 IN module-loader.a80
+LDIR:               0F58 DEFINED AT LINE 70 IN module-loader.a80
+                    > USED AT LINE 78 IN module-loader.a80
+EEPOLL:             E00D DEFINED AT LINE 91 IN module-loader.a80
+                    > USED AT LINE 96 IN module-loader.a80
+EEPOLL2:            E01F DEFINED AT LINE 101 IN module-loader.a80
+                    > USED AT LINE 104 IN module-loader.a80
+G:                  E027 DEFINED AT LINE 107 IN module-loader.a80
+                    > USED AT LINE 107 IN module-loader.a80
+NOMONITOR:          E02A DEFINED AT LINE 109 IN module-loader.a80
+                    > USED AT LINE 88 IN module-loader.a80
+NOWREN:             E030 DEFINED AT LINE 113 IN module-loader.a80
+                    > USED AT LINE 94 IN module-loader.a80
+MEND:               0F9C DEFINED AT LINE 118 IN module-loader.a80
+                    > USED AT LINE 69 IN module-loader.a80
+CRCF:               0F9C DEFINED AT LINE 122 IN module-loader.a80
+                    > USED AT LINE 61 IN module-loader.a80
+CRCF0:              0F9F DEFINED AT LINE 124 IN module-loader.a80
+                    > USED AT LINE 158 IN module-loader.a80
+CRCFL:              0FB0 DEFINED AT LINE 138 IN module-loader.a80
+                    > USED AT LINE 136 IN module-loader.a80
+CRCF2:              0FB5 DEFINED AT LINE 141 IN module-loader.a80
+                    > USED AT LINE 139 IN module-loader.a80
+MSGLEN:             100F DEFINED AT LINE 163 IN module-loader.a80
+                    > USED AT LINE 47 IN module-loader.a80
+MSGCRC:             101E DEFINED AT LINE 164 IN module-loader.a80
+                    > USED AT LINE 57 IN module-loader.a80
+MSGMON:             1027 DEFINED AT LINE 165 IN module-loader.a80
+                    > USED AT LINE 110 IN module-loader.a80
+MSGWREN:            1036 DEFINED AT LINE 166 IN module-loader.a80
+                    > USED AT LINE 114 IN module-loader.a80
+RAMTOP:             FF00 DEFINED AT LINE 685
+BRKBYTE:            FF00 DEFINED AT LINE 686
+                    > USED AT LINE 66
+                    > USED AT LINE 315
+BRKHL:              FF01 DEFINED AT LINE 687
+                    > USED AT LINE 29
+                    > USED AT LINE 251
+                    > USED AT LINE 330
+BRKPC:              FF03 DEFINED AT LINE 688
+                    > USED AT LINE 65
+                    > USED AT LINE 76
+                    > USED AT LINE 264
+                    > USED AT LINE 266
+                    > USED AT LINE 322
+BRKSP:              FF05 DEFINED AT LINE 689
+                    > USED AT LINE 62
+                    > USED AT LINE 259
+                    > USED AT LINE 261
+BRKPSW:             FF07 DEFINED AT LINE 690
+                    > USED AT LINE 58
+                    > USED AT LINE 233
+                    > USED AT LINE 324
+BRKBC:              FF09 DEFINED AT LINE 691
+                    > USED AT LINE 73
+                    > USED AT LINE 237
+                    > USED AT LINE 328
+BRKDE:              FF0B DEFINED AT LINE 692
+                    > USED AT LINE 70
+                    > USED AT LINE 244
+                    > USED AT LINE 326
+LASTKEY:            FF0D DEFINED AT LINE 693
+BUFA:               FF0E DEFINED AT LINE 694
+RAMEND:             FF10 DEFINED AT LINE 695

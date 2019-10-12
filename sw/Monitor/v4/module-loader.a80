@@ -1,0 +1,169 @@
+; KILO ROM Module
+; Needs these instructions on the begin:
+            .CSEG    
+            ALIGN   256 
+            .BLOCK   
+            JMP     testmod ; Jump to the begin
+
+; Needed signature: MOD4 + module name
+            .ISTR   "MOD4HEX Loader" 
+
+PRINTSTR:   .MACRO   
+            RST     3 
+            DB      5 
+            .ENDM    
+
+SERIN   .macro 
+            RST     3 
+            DB      3 
+            .ENDM    
+
+SEROUT  .macro 
+            RST     3 
+            DB      4 
+            .ENDM    
+
+; here are your space:
+TESTMOD:             
+            LXI     h,hello 
+            PRINTSTR  
+            LXI     h,8000h 
+MSTORE:              
+            SERIN    
+            JZ      mstore 
+            CPI     20h 
+            JZ      mready 
+            MOV     m,a 
+            CPI     ":" 
+            JNZ     mgo 
+            RST     1 
+MGO:                 
+            INX     h 
+            MOV     a,h 
+            CPI     0e0h 
+            JNZ     mstore 
+MREADY:              
+            PUSH    h 
+            LXI     h,msglen 
+            PRINTSTR  
+            POP     h 
+            PUSH    h 
+            LXI     d,8000h 
+            DAD     d 
+            push h
+            RST     3 
+            DB      6 
+
+            lxi h,msgcrc
+            printstr
+            pop b
+            lxi h,8000h
+            call crcf
+            xchg
+            RST     3 
+            DB      6 
+            
+;copy eeprom to e000
+            LXI     d,0e000h 
+            LXI     h,main 
+            LXI     b,mend-main 
+LDIR:                
+            MOV     a,m 
+            STAX    d 
+            INX     d 
+            INX     h 
+            DCX     b 
+            MOV     a,b 
+            ORA     c 
+            JNZ     ldir 
+            POP     h 
+            JMP     0e000h 
+
+MAIN:                
+            .PHASE  0xe000 
+
+;eep check
+            LDA     0 
+            CPI     0f3h 
+            JNZ     nomonitor 
+            mvi a,0
+            sta 0
+eepoll:            
+            lda 0
+            cpi 0f3h
+            jz nowren
+            cpi 0
+            jnz eepoll
+            ;eeprom write OK
+
+            mvi a,0f3h
+            sta 0
+eepoll2:            
+            lda 0
+            cpi 0
+            jnz eepoll2
+
+            
+G:          JMP     g 
+
+NOMONITOR:
+ lxi h,msgmon
+ printstr
+ rst 0
+NOWREN:              
+            LXI     h,msgwren 
+            PRINTSTR  
+            RST     0 
+            .DEPHASE  
+MEND        EQU     $ 
+
+;---- crc
+
+CRCF:                
+            LXI     D,0 ;INITIALIZE eRC
+CRCF0:               
+            MOV     A,M 
+            INX     H 
+            PUSH    H 
+            XRA     E 
+            MOV     L,A 
+            ADD     A 
+            PUSH    PSW 
+            XRA     L 
+            MOV     L,A 
+            POP     PSW 
+            MVI     A,0 
+            JPE     CRCFl 
+            MVI     A,$03 
+CRCFL:               
+            JNC     CRCF2 
+            XRI     $02 
+CRCF2:               
+            MOV     H,A 
+            RAR      
+            DAD     H 
+            DAD     H 
+            DAD     H 
+            DAD     H 
+            DAD     H 
+            DAD     H 
+            ORA     L 
+            XRA     D 
+            MOV     E,A 
+            MOV     D,H 
+            POP     H 
+            DCX     B 
+            MOV     a,b 
+            ORA     c 
+            JNZ     CRCF0 
+            RET      
+HELLO:               
+            DB      $0d,$0a,"Start your HEX file, will be saved at 8000h",$0d,$0a 
+            .ISTR   "End with a space key.",$0d,$0a 
+MSGLEN:     .ISTR   $0d,$0a,"Bytes saved: " 
+MSGCRC:     .ISTR   $0d,$0a,"CRC16: " 
+MSGMON: .istr $0d,$0a,"Bad monitor",$0d,$0a
+MSGWREN: .istr $0d,$0a,"EEP Write Disable. Power off, enable WREN and try again!",$0d,$0a
+
+            .ENDBLOCK  
+

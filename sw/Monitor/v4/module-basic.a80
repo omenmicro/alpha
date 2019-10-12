@@ -48,7 +48,7 @@ START:      LXI     SP,STACK ;*** COLD START ***
             JMP     INIT 
 
                     ; 
-CRLF:       MVI     A,0d ;*** CRLF ***
+CRLF:       MVI     A,0dh ;*** CRLF ***
                     ; 
 RST2:               
 OUTC:               
