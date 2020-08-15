@@ -50,10 +50,11 @@ EEWRITE:
 ;during the internal write cycle
 DLOOP:               
             DCX     h 
-            MOV     m,a 
+DLOOP2:            
+            MOV     a,m 
             CPI     0 
 LASTBYTE    EQU     $-1 
-            JNZ     dloop 
+            JNZ     dloop2
             INX     h 
-            RET      ; 10 T
+            RET 
 
